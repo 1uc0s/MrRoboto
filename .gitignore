@@ -1,0 +1,41 @@
+# Build artifacts
+*.d
+*.pre
+*.p1
+*.lst
+*.sym
+*.obj
+*.o
+*.sdb
+*.obj.dmp
+*.hex
+*.elf
+*.hxl
+*.cmf
+*.map
+
+# Build directories
+build/
+_build/
+out/
+nbbuild/
+dist/
+debug/
+nbdist/
+cmake/
+
+# IDE and editor files
+.vscode/
+.clangd/
+nbproject/private/
+nbproject/Package-*.bash
+nbproject/Makefile-*
+nbactions.xml
+nb-configuration.xml
+
+# Documentation and misc
+html/
+funclist
+disassembly/
+
+*.code-workspace
