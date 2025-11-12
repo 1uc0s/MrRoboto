@@ -1,5 +1,5 @@
 #include <xc.inc>
-psect code, abs
+psect motor_code,class=CODE,reloc=2
 
 ; ============================================
 ; Motor Control Module for L298N Driver
