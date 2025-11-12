@@ -4,7 +4,7 @@ psect motor_code,class=CODE,reloc=2
 ; ============================================
 ; Motor Control Module for L298N Driver
 ; Unipolar Stepper Motor: 9904 112 35014
-; Control Pins: PORT F (RF0=IN1, RF1=IN2, RF2=IN3, RF3=IN4)
+; Control Pins: PORT E (RE0=IN1, RE1=IN2, RE2=IN3, RE3=IN4) - Testing with PORT E
 ; ENA/ENB: Connected to +5V (always enabled)
 ; ============================================
 
@@ -13,10 +13,10 @@ global	Motor_Init, Motor_BidirectionalTest, Motor_StepForward, Motor_StepBackwar
 
 ; Motor step sequence constants (unipolar wave drive)
 ; Each step energizes one phase at a time
-STEP1	EQU	0x01	; IN1=1, others=0 (RF0=1, RF1=0, RF2=0, RF3=0)
-STEP2	EQU	0x04	; IN3=1, others=0 (RF0=0, RF1=0, RF2=1, RF3=0)
-STEP3	EQU	0x02	; IN2=1, others=0 (RF0=0, RF1=1, RF2=0, RF3=0)
-STEP4	EQU	0x08	; IN4=1, others=0 (RF0=0, RF1=0, RF2=0, RF3=1)
+STEP1	EQU	0x01	; IN1=1, others=0 (RE0=1, RE1=0, RE2=0, RE3=0)
+STEP2	EQU	0x04	; IN3=1, others=0 (RE0=0, RE1=0, RE2=1, RE3=0)
+STEP3	EQU	0x02	; IN2=1, others=0 (RE0=0, RE1=1, RE2=0, RE3=0)
+STEP4	EQU	0x08	; IN4=1, others=0 (RE0=0, RE1=0, RE2=0, RE3=1)
 
 ; Step counter for tracking current position in sequence
 stepIndex	EQU	0x0A	; Current step index (0-3)
@@ -29,15 +29,15 @@ pauseOuter	EQU	0x10	; Outer loop counter for pause
 
 ; ============================================
 ; Motor_Init: Initialize motor control
-; Sets PORT F as output and initializes motor to step 0
+; Sets PORT E as output and initializes motor to step 0
 ; ============================================
 Motor_Init:
-	; PORT F is already configured as output in main.s setup
+	; PORT E is already configured as output in main.s setup
 	; Initialize motor to first step position
 	movlw	0x00
 	movwf	stepIndex, A	; Start at step 0
 	movlw	STEP1
-	movwf	PORTF, A	; Set initial step position
+	movwf	PORTE, A	; Set initial step position
 	return
 
 ; ============================================
@@ -53,7 +53,7 @@ Motor_StepForward:
 	; Jump to appropriate step based on index
 	movf	stepIndex, W, A
 	call	GetStepValue	; Get step pattern for current index
-	movwf	PORTF, A	; Output step pattern to PORT F
+	movwf	PORTE, A	; Output step pattern to PORT E
 	return
 
 ; ============================================
@@ -69,7 +69,7 @@ Motor_StepBackward:
 	; Jump to appropriate step based on index
 	movf	stepIndex, W, A
 	call	GetStepValue	; Get step pattern for current index
-	movwf	PORTF, A	; Output step pattern to PORT F
+	movwf	PORTE, A	; Output step pattern to PORT E
 	return
 
 ; ============================================

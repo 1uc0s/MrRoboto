@@ -19,8 +19,8 @@ setup:
 		movwf	TRISF, A    ; setup F as an output
 		movlw	0x00
 		movwf	TRISG, A    ; setup G as an output
-		movlw	0xFF
-		movwf	TRISE, A    ; setup E as an input
+		movlw	0x00
+		movwf	TRISE, A    ; setup E as an output (for motor control testing)
 		align	2			; ensure alignment of subsequent instructions
 		; ******* Motor Control Setup *********************
 		call	Motor_Init		; Initialize motor control
