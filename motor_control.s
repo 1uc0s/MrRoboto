@@ -108,14 +108,14 @@ return_step3:
 	return
 
 ; ============================================
-; Motor_StepDelay: Delay between steps (~1 second = 1 step/sec)
+; Motor_StepDelay: Delay between steps (~0.1 second = 10 steps/sec)
 ; Config: 16MHz crystal with PLL x4 enabled = 64MHz system clock
 ; Instruction cycle = 4 clocks, so instruction rate = 64MHz / 4 = 16 MIPS
-; For ~1 second delay, need ~16,000,000 instruction cycles
+; For ~0.1 second delay, need ~1,600,000 instruction cycles
 ; Using triple nested loop with simple 8-bit counters for reliability
 ; Each inner loop iteration: ~2 cycles (decf + bnz when taken)
-; Need: 16,000,000 / 2 ≈ 8,000,000 iterations
-; Calculation: 250 × 250 × 128 ≈ 8,000,000 iterations ≈ 16,000,000 cycles ≈ 1.0 seconds
+; Need: 1,600,000 / 2 ≈ 800,000 iterations
+; Calculation: 250 × 250 × 13 ≈ 812,500 iterations ≈ 1,625,000 cycles ≈ 0.101 seconds
 ; ============================================
 Motor_StepDelay:
 	; Outer loop: 250 iterations
@@ -128,9 +128,9 @@ delay_outer:
 	movwf	pauseDelayH, A
 	
 delay_middle:
-	; Inner loop: 128 iterations (0x80)
-	; This gives: 250 × 250 × 128 ≈ 8,000,000 iterations ≈ 16,000,000 cycles ≈ 1.0 seconds
-	movlw	0x80		; 128 decimal
+	; Inner loop: 13 iterations (0x0D)
+	; This gives: 250 × 250 × 13 ≈ 812,500 iterations ≈ 1,625,000 cycles ≈ 0.101 seconds
+	movlw	0x0D		; 13 decimal
 	movwf	stepDelayL, A
 	
 delay_loop:
