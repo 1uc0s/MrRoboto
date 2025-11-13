@@ -205,16 +205,15 @@ pause_inner:
 ; ============================================
 Motor_BidirectionalTest:
 	; Rotate forward 96 steps (720° rotation: 96 steps × 7.5° = 720° = 2 full rotations)
-	movlw	0x60		; 96 decimal steps
+	movlw	0x120		; 288 decimal steps 
 	call	Motor_StepsForward
 	
 	; Pause between direction changes
 	call	Motor_Pause
 	
-	; Rotate backward 96 steps (return to start)
-	movlw	0x60		; 96 decimal steps
+	; Rotate backward 288 steps (return to start)
+	movlw	0x120		; 288 decimal steps 
 	call	Motor_StepsBackward
-	
 	; Pause before next cycle
 	call	Motor_Pause
 	
