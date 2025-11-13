@@ -108,18 +108,18 @@ return_step3:
 	return
 
 ; ============================================
-; Motor_StepDelay: Delay between steps (~1 second at 16MHz)
+; Motor_StepDelay: Delay between steps (~200ms = 5 steps/sec at 16MHz)
 ; At 16MHz, instruction cycle = 4 clocks = 4MHz instructions/sec
-; For ~1 second delay, need ~4,000,000 instruction cycles
+; For ~200ms delay, need ~800,000 instruction cycles
 ; Using nested loops: outer × middle × inner iterations
 ; ============================================
 Motor_StepDelay:
-	; Outer loop: ~20 iterations
-	movlw	0x14		; 20 decimal iterations
+	; Outer loop: ~3 iterations
+	movlw	0x03		; 3 iterations
 	movwf	pauseOuter, A
 	
 delay_outer:
-	; Middle loop: ~255 iterations  
+	; Middle loop: ~0xFF iterations (255)
 	movlw	0xFF		; 255 iterations
 	movwf	pauseDelayH, A
 	
