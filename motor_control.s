@@ -3,20 +3,22 @@ psect motor_code,class=CODE,reloc=2
 
 ; ============================================
 ; Motor Control Module for L298N Driver
-; Unipolar Stepper Motor: 9904 112 35014
-; Control Pins: PORT E (RE0=IN1, RE1=IN2, RE2=IN3, RE3=IN4) - Testing with PORT E
+; Unipolar Stepper Motor: 9904 112 35014 (6 terminals, 4-phase unipolar)
+; Using L298N to drive individual coils (not as H-bridges)
+; Control Pins: PORT E (RE0=Coil1, RE1=Coil2, RE2=Coil3, RE3=Coil4)
 ; ENA/ENB: Connected to +5V (always enabled)
 ; ============================================
 
 ; Export functions for use in other modules
 global	Motor_Init, Motor_BidirectionalTest, Motor_StepForward, Motor_StepBackward, Motor_StepsForward, Motor_StepsBackward
 
-; Motor step sequence constants (unipolar wave drive)
-; Each step energizes one phase at a time
-STEP1	EQU	0x01	; IN1=1, others=0 (RE0=1, RE1=0, RE2=0, RE3=0)
-STEP2	EQU	0x04	; IN3=1, others=0 (RE0=0, RE1=0, RE2=1, RE3=0)
-STEP3	EQU	0x02	; IN2=1, others=0 (RE0=0, RE1=1, RE2=0, RE3=0)
-STEP4	EQU	0x08	; IN4=1, others=0 (RE0=0, RE1=0, RE2=0, RE3=1)
+; Motor step sequence constants (unipolar wave drive - one coil at a time)
+; According to Philips documentation: Wave drive sequence is 1→3→2→4
+; Pin connections: RE0=Coil1, RE1=Coil2, RE2=Coil3, RE3=Coil4
+STEP1	EQU	0x01	; Coil 1 ON, others OFF (RE0=1, RE1=0, RE2=0, RE3=0)
+STEP2	EQU	0x04	; Coil 3 ON, others OFF (RE0=0, RE1=0, RE2=1, RE3=0)
+STEP3	EQU	0x02	; Coil 2 ON, others OFF (RE0=0, RE1=1, RE2=0, RE3=0)
+STEP4	EQU	0x08	; Coil 4 ON, others OFF (RE0=0, RE1=0, RE2=0, RE3=1)
 
 ; Step counter for tracking current position in sequence
 stepIndex	EQU	0x0A	; Current step index (0-3)
@@ -106,20 +108,40 @@ return_step3:
 	return
 
 ; ============================================
-; Motor_StepDelay: Delay between steps
-; Provides safe timing to prevent motor stalling
-; Adjustable delay (currently ~10ms at 16MHz)
+; Motor_StepDelay: Delay between steps (~1 second at 16MHz)
+; At 16MHz, instruction cycle = 4 clocks = 4MHz instructions/sec
+; For ~1 second delay, need ~4,000,000 instruction cycles
+; Using nested loops: outer × middle × inner iterations
 ; ============================================
 Motor_StepDelay:
-	movlw	high(0x0FFF)	; High byte of delay counter
+	; Outer loop: ~20 iterations
+	movlw	0x14		; 20 decimal iterations
+	movwf	pauseOuter, A
+	
+delay_outer:
+	; Middle loop: ~255 iterations  
+	movlw	0xFF		; 255 iterations
+	movwf	pauseDelayH, A
+	
+delay_middle:
+	; Inner loop: ~0xFFFF iterations (65535)
+	movlw	high(0xFFFF)	; High byte of delay counter
 	movwf	stepDelayH, A
-	movlw	low(0x0FFF)	; Low byte of delay counter
+	movlw	low(0xFFFF)	; Low byte of delay counter
 	movwf	stepDelayL, A
 	
 delay_loop:
 	decf	stepDelayL, F, A
 	subwfb	stepDelayH, F, A
-	bc	delay_loop	; Continue if not zero
+	bc	delay_loop	; Continue inner loop if not zero
+	
+	; Middle loop iteration
+	decf	pauseDelayH, F, A
+	bnz	delay_middle	; Continue middle loop if not zero
+	
+	; Outer loop iteration
+	decf	pauseOuter, F, A
+	bnz	delay_outer	; Continue outer loop if not zero
 	return
 
 ; ============================================
