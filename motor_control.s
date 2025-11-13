@@ -109,29 +109,29 @@ return_step3:
 	return
 
 ; ============================================
-; Motor_StepDelay: Delay between steps (~0.1 second = 10 steps/sec)
+; Motor_StepDelay: Delay between steps (~0.01 second = 100 steps/sec)
 ; Config: 16MHz crystal with PLL x4 enabled = 64MHz system clock
 ; Instruction cycle = 4 clocks, so instruction rate = 64MHz / 4 = 16 MIPS
-; For ~0.1 second delay, need ~1,600,000 instruction cycles
+; For ~0.01 second delay, need ~160,000 instruction cycles
 ; Using triple nested loop with simple 8-bit counters for reliability
 ; Each inner loop iteration: ~2 cycles (decf + bnz when taken)
-; Need: 1,600,000 / 2 ≈ 800,000 iterations
-; Calculation: 250 × 250 × 13 ≈ 812,500 iterations ≈ 1,625,000 cycles ≈ 0.101 seconds
+; Need: 160,000 / 2 ≈ 80,000 iterations
+; Calculation: 200 × 200 × 2 ≈ 80,000 iterations ≈ 160,000 cycles ≈ 0.01 seconds
 ; ============================================
 Motor_StepDelay:
-	; Outer loop: 250 iterations
-	movlw	0xFA		; 250 decimal
+	; Outer loop: 200 iterations
+	movlw	0xC8		; 200 decimal
 	movwf	pauseOuter, A
 	
 delay_outer:
-	; Middle loop: 250 iterations  
-	movlw	0xFA		; 250 decimal
+	; Middle loop: 200 iterations  
+	movlw	0xC8		; 200 decimal
 	movwf	pauseDelayH, A
 	
 delay_middle:
-	; Inner loop: 13 iterations (0x0D)
-	; This gives: 250 × 250 × 13 ≈ 812,500 iterations ≈ 1,625,000 cycles ≈ 0.101 seconds
-	movlw	0x0D		; 13 decimal
+	; Inner loop: 2 iterations
+	; This gives: 200 × 200 × 2 ≈ 80,000 iterations ≈ 160,000 cycles ≈ 0.01 seconds
+	movlw	0x02		; 2 decimal
 	movwf	stepDelayL, A
 	
 delay_loop:
@@ -200,19 +200,19 @@ pause_inner:
 
 ; ============================================
 ; Motor_BidirectionalTest: Test motor with bidirectional rotation
-; Rotates forward 12 steps (90°), pauses, rotates back 12 steps
+; Rotates forward 96 steps (720° = 2 full rotations), pauses, rotates back 96 steps
 ; Repeats continuously
 ; ============================================
 Motor_BidirectionalTest:
-	; Rotate forward 12 steps (90° rotation: 12 steps × 7.5° = 90°)
-	movlw	0x0C		; 12 steps
+	; Rotate forward 96 steps (720° rotation: 96 steps × 7.5° = 720° = 2 full rotations)
+	movlw	0x60		; 96 decimal steps
 	call	Motor_StepsForward
 	
 	; Pause between direction changes
 	call	Motor_Pause
 	
-	; Rotate backward 12 steps (return to start)
-	movlw	0x0C		; 12 steps
+	; Rotate backward 96 steps (return to start)
+	movlw	0x60		; 96 decimal steps
 	call	Motor_StepsBackward
 	
 	; Pause before next cycle
