@@ -10,7 +10,7 @@ psect motor_code,class=CODE,reloc=2
 ; ============================================
 
 ; Export functions for use in other modules
-global	Motor_Init, Motor_BidirectionalTest, Motor_StepForward, Motor_StepBackward, Motor_StepsForward, Motor_StepsBackward
+global	Motor_Init, Motor_BidirectionalTest, Motor_StepForward, Motor_StepBackward, Motor_StepsForward, Motor_StepsBackward, Motor_StepDelay
 
 ; Motor step sequence constants (unipolar wave drive - one coil at a time)
 ; According to Philips documentation: Wave drive sequence is 1→3→2→4
