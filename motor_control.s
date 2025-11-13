@@ -78,12 +78,19 @@ Motor_StepBackward:
 ; Output: W = step pattern value
 ; ============================================
 GetStepValue:
-	; Use conditional branches instead of computed jump
-	sublw	0x00		; Compare W with 0 (0 - W, sets Z if W==0)
+	; Save W to temporary register for comparison
+	movwf	stepDelayL, A	; Temporarily use stepDelayL to save W
+	; Compare with 0
+	movf	stepDelayL, W, A
+	xorlw	0x00		; XOR with 0, sets Z if W==0
 	bz	return_step1
-	sublw	0x01		; Compare W with 1 (1 - W, sets Z if W==1)
+	; Compare with 1
+	movf	stepDelayL, W, A
+	xorlw	0x01		; XOR with 1, sets Z if W==1
 	bz	return_step2
-	sublw	0x01		; Compare W with 2 (2 - W, sets Z if W==2)
+	; Compare with 2
+	movf	stepDelayL, W, A
+	xorlw	0x02		; XOR with 2, sets Z if W==2
 	bz	return_step3
 	; If we get here, W must be 3
 	movlw	STEP4
