@@ -70,6 +70,8 @@ This guide includes:
 - **[Leadshine DM542 Stepper Driver](docs/Leadshine%20DM542%20Stepper%20Driver.md)** - Alternative driver documentation
 
 ### Software Documentation
+- **[Motor Control Module](docs/Motor_Control_Module.md)** - Complete documentation for stepper motor control with L298N driver
+- **[L298N Unipolar Wiring Guide](docs/L298N_Unipolar_Wiring.md)** - Hardware wiring and troubleshooting
 - **[Assembly Programming Guide](docs/3_Assembly_2.md)** - PIC18 assembly language basics
 - **[Electronics and DAC](docs/4_Electronics-DAC.md)** - Digital-to-analog conversion
 - **[Serial and Parallel Communication](docs/5_Serial_Parallel.md)** - Communication protocols
