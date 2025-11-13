@@ -1,6 +1,6 @@
 #include <xc.inc>
 
-extrn	Motor_Init, Motor_StepForward, Motor_StepDelay  ; external subroutines
+extrn	Motor_Init, Motor_BidirectionalTest  ; external subroutines
 
 psect code, abs
 main:
@@ -27,11 +27,10 @@ setup:
 		goto	start
 
 start:		
-		; Main loop: Continuous forward stepping (~1 step per second)
+		; Main loop: Run bidirectional motor test continuously
 loop:	
-		call	Motor_StepForward	; Execute one step forward
-		call	Motor_StepDelay		; Wait ~1 second
-		bra		loop			; Loop forever (continuous forward movement)
+		call	Motor_BidirectionalTest	; Execute bidirectional test (forward 12 steps, pause, backward 12 steps)
+		bra		loop			; Loop forever
 		; SPI and delay functions removed - now using motor_control.s module
 	
 	end main

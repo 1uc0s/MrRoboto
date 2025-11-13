@@ -81,17 +81,18 @@ Motor_StepBackward:
 ; ============================================
 GetStepValue:
 	; Save W to temporary register for comparison
-	movwf	stepDelayL, A	; Temporarily use stepDelayL to save W
+	; Use pauseDelayL instead of stepDelayL to avoid conflicts with delay functions
+	movwf	pauseDelayL, A	; Temporarily use pauseDelayL to save W
 	; Compare with 0
-	movf	stepDelayL, W, A
+	movf	pauseDelayL, W, A
 	xorlw	0x00		; XOR with 0, sets Z if W==0
 	bz	return_step1
 	; Compare with 1
-	movf	stepDelayL, W, A
+	movf	pauseDelayL, W, A
 	xorlw	0x01		; XOR with 1, sets Z if W==1
 	bz	return_step2
 	; Compare with 2
-	movf	stepDelayL, W, A
+	movf	pauseDelayL, W, A
 	xorlw	0x02		; XOR with 2, sets Z if W==2
 	bz	return_step3
 	; If we get here, W must be 3
@@ -108,14 +109,14 @@ return_step3:
 	return
 
 ; ============================================
-; Motor_StepDelay: Delay between steps (~0.1 second = 10 steps/sec)
+; Motor_StepDelay: Delay between steps (~1 second = 1 step/sec)
 ; Config: 16MHz crystal with PLL x4 enabled = 64MHz system clock
 ; Instruction cycle = 4 clocks, so instruction rate = 64MHz / 4 = 16 MIPS
-; For ~0.1 second delay, need ~1,600,000 instruction cycles
+; For ~1 second delay, need ~16,000,000 instruction cycles
 ; Using triple nested loop with simple 8-bit counters for reliability
 ; Each inner loop iteration: ~2 cycles (decf + bnz when taken)
-; Need: 1,600,000 / 2 ≈ 800,000 iterations
-; Calculation: 250 × 250 × 13 ≈ 812,500 iterations ≈ 1,625,000 cycles ≈ 0.101 seconds
+; Need: 16,000,000 / 2 ≈ 8,000,000 iterations
+; Calculation: 250 × 250 × 128 ≈ 8,000,000 iterations ≈ 16,000,000 cycles ≈ 1.0 seconds
 ; ============================================
 Motor_StepDelay:
 	; Outer loop: 250 iterations
@@ -128,9 +129,9 @@ delay_outer:
 	movwf	pauseDelayH, A
 	
 delay_middle:
-	; Inner loop: 13 iterations (0x0D)
-	; This gives: 250 × 250 × 13 ≈ 812,500 iterations ≈ 1,625,000 cycles ≈ 0.101 seconds
-	movlw	0x0D		; 13 decimal
+	; Inner loop: 128 iterations (0x80)
+	; This gives: 250 × 250 × 128 ≈ 8,000,000 iterations ≈ 16,000,000 cycles ≈ 1.0 seconds
+	movlw	0x80		; 128 decimal
 	movwf	stepDelayL, A
 	
 delay_loop:
