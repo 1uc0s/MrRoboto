@@ -78,12 +78,25 @@ Motor_StepBackward:
 ; Output: W = step pattern value
 ; ============================================
 GetStepValue:
-	; Create jump table for step values
-	addwf	PCL, F, A	; Add offset to program counter
-	retlw	STEP1		; Index 0
-	retlw	STEP2		; Index 1
-	retlw	STEP3		; Index 2
-	retlw	STEP4		; Index 3
+	; Use conditional branches instead of computed jump
+	sublw	0x00		; Compare W with 0 (0 - W, sets Z if W==0)
+	bz	return_step1
+	sublw	0x01		; Compare W with 1 (1 - W, sets Z if W==1)
+	bz	return_step2
+	sublw	0x01		; Compare W with 2 (2 - W, sets Z if W==2)
+	bz	return_step3
+	; If we get here, W must be 3
+	movlw	STEP4
+	return
+return_step1:
+	movlw	STEP1
+	return
+return_step2:
+	movlw	STEP2
+	return
+return_step3:
+	movlw	STEP3
+	return
 
 ; ============================================
 ; Motor_StepDelay: Delay between steps
