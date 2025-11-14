@@ -8,6 +8,13 @@ This project is based on the MicroprocessorsLab repository and extends it to con
 
 ## Hardware Components
 
+### Robot Arm Architecture
+The robot arm consists of 6 stepper motors organized into 4 independently controllable motor units:
+- **Claw Motor** (PORT E): Single motor for gripper control
+- **Base Motor** (PORT F): Single motor for base rotation
+- **Wrist Motors** (PORT G): Pair of motors moving together for wrist articulation
+- **Elbow Motors** (PORT H): Pair of motors moving together for elbow articulation
+
 ### Stepper Motor
 - **Model:** 9904 112 35014 (from 9904 112 35 series)
 - **Specifications:**
@@ -19,8 +26,8 @@ This project is based on the MicroprocessorsLab repository and extends it to con
   - Inductance per phase: 400mH
   - Terminals: 6 terminals (unipolar/bipolar capable)
   - Weight: 300g
-- **Driver:** ULN2003A Darlington Array (4 motors × 4 ULN2003A modules)
-- **Power Requirements:** External 8-12V power supply (1.5A+ recommended)
+- **Driver:** L298N Motor Driver (currently using unipolar configuration)
+- **Power Requirements:** External 8-12V power supply (2A+ recommended for multiple motors)
 
 ### Development Board
 - **Model:** EasyPIC PRO v7
@@ -82,4 +89,49 @@ This guide includes:
 
 ## Development
 
-The initial codebase is based on the master branch of MicroprocessorsLab. The main program (`main.s`) will be modified to interface with stepper motor drivers for robot arm control.
+The initial codebase is based on the master branch of MicroprocessorsLab. The main program (`main.s`) interfaces with stepper motor drivers for robot arm control.
+
+### Current Implementation Status
+
+**✅ Implemented:**
+- Dual motor simultaneous control (Claw + Base motors)
+- Interleaved stepping for smooth coordinated motion
+- Configurable step count via `BIDIR_TEST_STEPS` constant
+- Independent step tracking for each motor unit
+- Bidirectional test routine
+
+**🔄 Future Expansion:**
+- Wrist motor pair control (PORT G)
+- Elbow motor pair control (PORT H)
+- Individual motor control functions
+- Complex motion sequences
+
+### Motor Control Architecture
+
+The motor control system (`motor_control.s`) follows a scalable, debuggable pattern:
+
+1. **Each motor unit has:**
+   - Dedicated step index variable (e.g., `clawStepIndex`, `baseStepIndex`)
+   - Individual forward/backward step functions (e.g., `Claw_StepForward`)
+   - PORT assignment (E, F, G, or H)
+
+2. **Interleaved operation:**
+   - `Both_StepForward` and `Both_StepBackward` coordinate multiple motors
+   - Single delay applied after all motors step
+   - Creates smooth synchronized motion
+
+3. **Easy configuration:**
+   - Change `BIDIR_TEST_STEPS` constant to adjust rotation amount
+   - Currently set to 0x120 (288 steps = 3 full rotations)
+
+### Adding New Motor Units
+
+To add Wrist or Elbow motor control, follow the existing pattern in `motor_control.s`:
+
+1. Add step index variable: `wristStepIndex EQU 0x12`
+2. Create step functions: `Wrist_StepForward`, `Wrist_StepBackward`
+3. Update `Motor_Init` to initialize the new motor
+4. Output to appropriate PORT (G for Wrist, H for Elbow)
+5. Create/update interleaved functions as needed
+
+This pattern keeps the code simple, maintainable, and easy to debug.

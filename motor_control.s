@@ -2,15 +2,20 @@
 psect motor_code,class=CODE,reloc=2
 
 ; ============================================
-; Motor Control Module for L298N Driver
+; Dual Motor Control Module for L298N Driver
 ; Unipolar Stepper Motor: 9904 112 35014 (6 terminals, 4-phase unipolar)
 ; Using L298N to drive individual coils (not as H-bridges)
-; Control Pins: PORT E (RE0=Coil1, RE1=Coil2, RE2=Coil3, RE3=Coil4)
+; CLAW MOTOR - PORT E (RE0=Coil1, RE1=Coil2, RE2=Coil3, RE3=Coil4)
+; BASE MOTOR - PORT F (RF0=Coil1, RF1=Coil2, RF2=Coil3, RF3=Coil4)
 ; ENA/ENB: Connected to +5V (always enabled)
 ; ============================================
 
+; Configuration constants
+BIDIR_TEST_STEPS	EQU	0x120	; 288 steps = 3 full rotations (easily changeable)
+
 ; Export functions for use in other modules
 global	Motor_Init, Motor_BidirectionalTest, Motor_StepForward, Motor_StepBackward, Motor_StepsForward, Motor_StepsBackward, Motor_StepDelay
+global	Claw_StepForward, Claw_StepBackward, Base_StepForward, Base_StepBackward
 
 ; Motor step sequence constants (unipolar wave drive - one coil at a time)
 ; According to Philips documentation: Wave drive sequence is 1→3→2→4
@@ -20,58 +25,47 @@ STEP2	EQU	0x04	; Coil 3 ON, others OFF (RE0=0, RE1=0, RE2=1, RE3=0)
 STEP3	EQU	0x02	; Coil 2 ON, others OFF (RE0=0, RE1=1, RE2=0, RE3=0)
 STEP4	EQU	0x08	; Coil 4 ON, others OFF (RE0=0, RE1=0, RE2=0, RE3=1)
 
-; Step counter for tracking current position in sequence
-stepIndex	EQU	0x0A	; Current step index (0-3)
-stepCount	EQU	0x0B	; Counter for number of steps to execute
-stepDelayH	EQU	0x0C	; Delay counter high byte for step timing
-stepDelayL	EQU	0x0D	; Delay counter low byte for step timing
-pauseDelayH	EQU	0x0E	; Pause delay counter high byte
-pauseDelayL	EQU	0x0F	; Pause delay counter low byte
-pauseOuter	EQU	0x10	; Outer loop counter for pause
+; Memory allocation for motor control
+clawStepIndex	EQU	0x0A	; Claw motor current step index (0-3)
+baseStepIndex	EQU	0x0B	; Base motor current step index (0-3)
+stepCount	EQU	0x0C	; Counter for number of steps to execute
+stepDelayH	EQU	0x0D	; Delay counter high byte for step timing
+stepDelayL	EQU	0x0E	; Delay counter low byte for step timing
+pauseDelayH	EQU	0x0F	; Pause delay counter high byte
+pauseDelayL	EQU	0x10	; Pause delay counter low byte
+pauseOuter	EQU	0x11	; Outer loop counter for pause
 
 ; ============================================
-; Motor_Init: Initialize motor control
-; Sets PORT E as output and initializes motor to step 0
+; Motor_Init: Initialize both motors (Claw and Base)
+; Sets PORT E (Claw) and PORT F (Base) and initializes both to step 0
 ; ============================================
 Motor_Init:
-	; PORT E is already configured as output in main.s setup
-	; Initialize motor to first step position
+	; PORT E and PORT F are already configured as outputs in main.s setup
+	; Initialize both motors to first step position
 	movlw	0x00
-	movwf	stepIndex, A	; Start at step 0
+	movwf	clawStepIndex, A	; Claw starts at step 0
+	movwf	baseStepIndex, A	; Base starts at step 0
 	movlw	STEP1
-	movwf	PORTE, A	; Set initial step position
+	movwf	PORTE, A	; Set claw initial step position
+	movwf	PORTF, A	; Set base initial step position
 	return
 
 ; ============================================
-; Motor_StepForward: Execute one step forward
-; Advances to next step in sequence (0->1->2->3->0)
+; Motor_StepForward: Execute one step forward (legacy - calls Both_StepForward)
+; Advances both motors to next step in sequence (0->1->2->3->0)
+; Kept for backward compatibility with exported function
 ; ============================================
 Motor_StepForward:
-	movf	stepIndex, W, A	; Load current step index
-	addlw	0x01		; Increment step index
-	andlw	0x03		; Wrap around (0-3)
-	movwf	stepIndex, A	; Save new step index
-	
-	; Jump to appropriate step based on index
-	movf	stepIndex, W, A
-	call	GetStepValue	; Get step pattern for current index
-	movwf	PORTE, A	; Output step pattern to PORT E
+	call	Both_StepForward
 	return
 
 ; ============================================
-; Motor_StepBackward: Execute one step backward
-; Moves to previous step in sequence (0->3->2->1->0)
+; Motor_StepBackward: Execute one step backward (legacy - calls Both_StepBackward)
+; Moves both motors to previous step in sequence (0->3->2->1->0)
+; Kept for backward compatibility with exported function
 ; ============================================
 Motor_StepBackward:
-	movf	stepIndex, W, A	; Load current step index
-	addlw	0x03		; Decrement by adding 3 (wraps correctly)
-	andlw	0x03		; Wrap around (0-3)
-	movwf	stepIndex, A	; Save new step index
-	
-	; Jump to appropriate step based on index
-	movf	stepIndex, W, A
-	call	GetStepValue	; Get step pattern for current index
-	movwf	PORTE, A	; Output step pattern to PORT E
+	call	Both_StepBackward
 	return
 
 ; ============================================
@@ -106,6 +100,88 @@ return_step2:
 	return
 return_step3:
 	movlw	STEP3
+	return
+
+; ============================================
+; Claw_StepForward: Execute one step forward on claw motor (PORT E)
+; Advances to next step in sequence (0->1->2->3->0)
+; ============================================
+Claw_StepForward:
+	movf	clawStepIndex, W, A	; Load current step index
+	addlw	0x01		; Increment step index
+	andlw	0x03		; Wrap around (0-3)
+	movwf	clawStepIndex, A	; Save new step index
+	
+	; Jump to appropriate step based on index
+	movf	clawStepIndex, W, A
+	call	GetStepValue	; Get step pattern for current index
+	movwf	PORTE, A	; Output step pattern to PORT E (Claw)
+	return
+
+; ============================================
+; Claw_StepBackward: Execute one step backward on claw motor (PORT E)
+; Moves to previous step in sequence (0->3->2->1->0)
+; ============================================
+Claw_StepBackward:
+	movf	clawStepIndex, W, A	; Load current step index
+	addlw	0x03		; Decrement by adding 3 (wraps correctly)
+	andlw	0x03		; Wrap around (0-3)
+	movwf	clawStepIndex, A	; Save new step index
+	
+	; Jump to appropriate step based on index
+	movf	clawStepIndex, W, A
+	call	GetStepValue	; Get step pattern for current index
+	movwf	PORTE, A	; Output step pattern to PORT E (Claw)
+	return
+
+; ============================================
+; Base_StepForward: Execute one step forward on base motor (PORT F)
+; Advances to next step in sequence (0->1->2->3->0)
+; ============================================
+Base_StepForward:
+	movf	baseStepIndex, W, A	; Load current step index
+	addlw	0x01		; Increment step index
+	andlw	0x03		; Wrap around (0-3)
+	movwf	baseStepIndex, A	; Save new step index
+	
+	; Jump to appropriate step based on index
+	movf	baseStepIndex, W, A
+	call	GetStepValue	; Get step pattern for current index
+	movwf	PORTF, A	; Output step pattern to PORT F (Base)
+	return
+
+; ============================================
+; Base_StepBackward: Execute one step backward on base motor (PORT F)
+; Moves to previous step in sequence (0->3->2->1->0)
+; ============================================
+Base_StepBackward:
+	movf	baseStepIndex, W, A	; Load current step index
+	addlw	0x03		; Decrement by adding 3 (wraps correctly)
+	andlw	0x03		; Wrap around (0-3)
+	movwf	baseStepIndex, A	; Save new step index
+	
+	; Jump to appropriate step based on index
+	movf	baseStepIndex, W, A
+	call	GetStepValue	; Get step pattern for current index
+	movwf	PORTF, A	; Output step pattern to PORT F (Base)
+	return
+
+; ============================================
+; Both_StepForward: Step both motors forward simultaneously (interleaved)
+; Steps claw motor, then base motor (no delay between)
+; ============================================
+Both_StepForward:
+	call	Claw_StepForward	; Step claw motor first
+	call	Base_StepForward	; Step base motor second
+	return
+
+; ============================================
+; Both_StepBackward: Step both motors backward simultaneously (interleaved)
+; Steps claw motor backward, then base motor backward (no delay between)
+; ============================================
+Both_StepBackward:
+	call	Claw_StepBackward	; Step claw motor backward first
+	call	Base_StepBackward	; Step base motor backward second
 	return
 
 ; ============================================
@@ -148,29 +224,31 @@ delay_loop:
 	return
 
 ; ============================================
-; Motor_StepsForward: Execute multiple steps forward
+; Motor_StepsForward: Execute multiple steps forward on both motors
 ; Input: W = number of steps to execute
+; Both motors step in synchronized interleaved fashion
 ; ============================================
 Motor_StepsForward:
 	movwf	stepCount, A	; Save step count
 	
 forward_loop:
-	call	Motor_StepForward
-	call	Motor_StepDelay
+	call	Both_StepForward	; Step both motors (interleaved)
+	call	Motor_StepDelay		; Delay after both motors step
 	decf	stepCount, F, A
 	bnz	forward_loop	; Continue if not zero
 	return
 
 ; ============================================
-; Motor_StepsBackward: Execute multiple steps backward
+; Motor_StepsBackward: Execute multiple steps backward on both motors
 ; Input: W = number of steps to execute
+; Both motors step in synchronized interleaved fashion
 ; ============================================
 Motor_StepsBackward:
 	movwf	stepCount, A	; Save step count
 	
 backward_loop:
-	call	Motor_StepBackward
-	call	Motor_StepDelay
+	call	Both_StepBackward	; Step both motors backward (interleaved)
+	call	Motor_StepDelay		; Delay after both motors step
 	decf	stepCount, F, A
 	bnz	backward_loop	; Continue if not zero
 	return
@@ -199,21 +277,23 @@ pause_inner:
 	return
 
 ; ============================================
-; Motor_BidirectionalTest: Test motor with bidirectional rotation
-; Rotates forward 96 steps (720° = 2 full rotations), pauses, rotates back 96 steps
+; Motor_BidirectionalTest: Test both motors with bidirectional rotation
+; Rotates both Claw and Base motors forward, pauses, rotates back
+; Step count controlled by BIDIR_TEST_STEPS constant
 ; Repeats continuously
 ; ============================================
 Motor_BidirectionalTest:
-	; Rotate forward 96 steps (720° rotation: 96 steps × 7.5° = 720° = 2 full rotations)
-	movlw	0x120		; 288 decimal steps 
+	; Rotate forward (both motors in sync)
+	movlw	BIDIR_TEST_STEPS	; Load step count from constant
 	call	Motor_StepsForward
 	
 	; Pause between direction changes
 	call	Motor_Pause
 	
-	; Rotate backward 288 steps (return to start)
-	movlw	0x120		; 288 decimal steps 
+	; Rotate backward (return to start)
+	movlw	BIDIR_TEST_STEPS	; Load step count from constant
 	call	Motor_StepsBackward
+	
 	; Pause before next cycle
 	call	Motor_Pause
 	
