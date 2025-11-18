@@ -23,7 +23,7 @@ BIDIR_TEST_STEPS	EQU	0x120	; 288 steps = 3 full rotations (legacy)
 
 ; Export functions for use in other modules
 global	Motor_Init, Motor_BidirectionalTest, Motor_StepForward, Motor_StepBackward, Motor_StepsForward, Motor_StepsBackward, Motor_StepDelay
-global	Motor_SequentialDemo, Motor_Pause
+global	Motor_StepDelaySlow, Motor_SequentialDemo, Motor_Pause
 global	Claw_StepForward, Claw_StepBackward, Base_StepForward, Base_StepBackward
 global	Base_StepsForward, Base_StepsBackward, Claw_StepsForward, Claw_StepsBackward
 global	Elbow_StepForward, Elbow_StepBackward, Elbow_StepsForward, Elbow_StepsBackward
@@ -36,6 +36,13 @@ STEP1	EQU	0x01	; Coil 1 ON, others OFF (RE0=1, RE1=0, RE2=0, RE3=0)
 STEP2	EQU	0x04	; Coil 3 ON, others OFF (RE0=0, RE1=0, RE2=1, RE3=0)
 STEP3	EQU	0x02	; Coil 2 ON, others OFF (RE0=0, RE1=1, RE2=0, RE3=0)
 STEP4	EQU	0x08	; Coil 4 ON, others OFF (RE0=0, RE1=0, RE2=0, RE3=1)
+
+; Full-step drive constants (two coils at once - higher torque, ~30% more)
+; Base motor uses full-step for better torque
+FULLSTEP1	EQU	0x03	; Coil 1 + Coil 2 ON (RE0=1, RE1=1, RE2=0, RE3=0)
+FULLSTEP2	EQU	0x06	; Coil 2 + Coil 3 ON (RE0=0, RE1=1, RE2=1, RE3=0)
+FULLSTEP3	EQU	0x0C	; Coil 3 + Coil 4 ON (RE0=0, RE1=0, RE2=1, RE3=1)
+FULLSTEP4	EQU	0x09	; Coil 4 + Coil 1 ON (RE0=1, RE1=0, RE2=0, RE3=1)
 
 ; Memory allocation for motor control
 clawStepIndex	EQU	0x0A	; Claw motor current step index (0-3)
@@ -97,9 +104,10 @@ Motor_Init:
 	movwf	wrist2StepIndex, A	; Wrist 2 starts at step 0
 	
 	; Initialize PORT D cache: Claw (low nibble) and Base (high nibble)
+	; Claw uses wave drive, Base uses full-step drive for higher torque
 	movlw	STEP1
 	movwf	portDClawPattern, A
-	movlw	STEP1
+	movlw	FULLSTEP1	; Base uses full-step (two coils) for more torque
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A
 	movwf	portDBasePattern, A
@@ -144,7 +152,7 @@ Motor_StepBackward:
 	return
 
 ; ============================================
-; GetStepValue: Returns step pattern for given index
+; GetStepValue: Returns step pattern for given index (wave drive - one coil)
 ; Input: W = step index (0-3)
 ; Output: W = step pattern value
 ; ============================================
@@ -175,6 +183,39 @@ return_step2:
 	return
 return_step3:
 	movlw	STEP3
+	return
+
+; ============================================
+; GetFullStepValue: Returns full-step pattern for given index (two coils - higher torque)
+; Input: W = step index (0-3)
+; Output: W = full-step pattern value
+; ============================================
+GetFullStepValue:
+	; Save W to temporary register for comparison
+	movwf	pauseDelayL, A	; Temporarily use pauseDelayL to save W
+	; Compare with 0
+	movf	pauseDelayL, W, A
+	xorlw	0x00		; XOR with 0, sets Z if W==0
+	bz	return_fullstep1
+	; Compare with 1
+	movf	pauseDelayL, W, A
+	xorlw	0x01		; XOR with 1, sets Z if W==1
+	bz	return_fullstep2
+	; Compare with 2
+	movf	pauseDelayL, W, A
+	xorlw	0x02		; XOR with 2, sets Z if W==2
+	bz	return_fullstep3
+	; If we get here, W must be 3
+	movlw	FULLSTEP4
+	return
+return_fullstep1:
+	movlw	FULLSTEP1
+	return
+return_fullstep2:
+	movlw	FULLSTEP2
+	return
+return_fullstep3:
+	movlw	FULLSTEP3
 	return
 
 ; ============================================
@@ -215,6 +256,7 @@ Claw_StepBackward:
 
 ; ============================================
 ; Base_StepForward: Execute one step forward on base motor (PORT D bits 4-7)
+; Uses FULL-STEP mode (two coils) for higher torque
 ; Advances to next step in sequence (0->1->2->3->0)
 ; Preserves Claw motor state (bits 0-3) via cached write to PORT D
 ; ============================================
@@ -224,9 +266,9 @@ Base_StepForward:
 	andlw	0x03		; Wrap around (0-3)
 	movwf	baseStepIndex, A	; Save new step index
 	
-	; Get step pattern for current index
+	; Get full-step pattern for current index (two coils for more torque)
 	movf	baseStepIndex, W, A
-	call	GetStepValue	; Get step pattern (bits 0-3)
+	call	GetFullStepValue	; Get full-step pattern (bits 0-3)
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A	; Shift into upper nibble
 	movwf	portDBasePattern, A
@@ -235,6 +277,7 @@ Base_StepForward:
 
 ; ============================================
 ; Base_StepBackward: Execute one step backward on base motor (PORT D bits 4-7)
+; Uses FULL-STEP mode (two coils) for higher torque
 ; Moves to previous step in sequence (0->3->2->1->0)
 ; Preserves Claw motor state (bits 0-3) via cached write to PORT D
 ; ============================================
@@ -244,9 +287,9 @@ Base_StepBackward:
 	andlw	0x03		; Wrap around (0-3)
 	movwf	baseStepIndex, A	; Save new step index
 	
-	; Get step pattern for current index
+	; Get full-step pattern for current index (two coils for more torque)
 	movf	baseStepIndex, W, A
-	call	GetStepValue	; Get step pattern (bits 0-3)
+	call	GetFullStepValue	; Get full-step pattern (bits 0-3)
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A	; Shift into upper nibble
 	movwf	portDBasePattern, A
@@ -423,6 +466,17 @@ delay_loop:
 	return
 
 ; ============================================
+; Motor_StepDelaySlow: Slower delay for base motor (~0.03 second = 33 steps/sec)
+; 3x slower than normal delay to help motor settle and reduce oscillation
+; ============================================
+Motor_StepDelaySlow:
+	; Call normal delay 3 times for 3x slower speed
+	call	Motor_StepDelay
+	call	Motor_StepDelay
+	call	Motor_StepDelay
+	return
+
+; ============================================
 ; Motor_StepsForward: Execute multiple steps forward on both motors
 ; Input: W = number of steps to execute
 ; Both motors step in synchronized interleaved fashion
@@ -455,13 +509,14 @@ backward_loop:
 ; ============================================
 ; Base_StepsForward: Execute multiple steps forward on Base motor
 ; Input: W = number of steps to execute
+; Uses slower delay to help motor settle and reduce oscillation
 ; ============================================
 Base_StepsForward:
 	movwf	stepCount, A	; Save step count
 	
 base_forward_loop:
-	call	Base_StepForward	; Step Base motor forward
-	call	Motor_StepDelay		; Delay after step
+	call	Base_StepForward	; Step Base motor forward (full-step mode)
+	call	Motor_StepDelaySlow	; Slower delay after step (3x slower)
 	decf	stepCount, F, A
 	bnz	base_forward_loop	; Continue if not zero
 	return
@@ -469,13 +524,14 @@ base_forward_loop:
 ; ============================================
 ; Base_StepsBackward: Execute multiple steps backward on Base motor
 ; Input: W = number of steps to execute
+; Uses slower delay to help motor settle and reduce oscillation
 ; ============================================
 Base_StepsBackward:
 	movwf	stepCount, A	; Save step count
 	
 base_backward_loop:
-	call	Base_StepBackward	; Step Base motor backward
-	call	Motor_StepDelay		; Delay after step
+	call	Base_StepBackward	; Step Base motor backward (full-step mode)
+	call	Motor_StepDelaySlow	; Slower delay after step (3x slower)
 	decf	stepCount, F, A
 	bnz	base_backward_loop	; Continue if not zero
 	return
