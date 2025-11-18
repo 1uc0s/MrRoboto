@@ -16,7 +16,7 @@ psect motor_code,class=CODE,reloc=2
 
 ; Configuration constants - step counts for each degree of freedom
 ; Motor has 7.5° step angle = 48 steps per full rotation (360°)
-BASE_STEPS	EQU	0x1E0	; 480 steps = 10 full rotations (base has 360° freedom)
+BASE_STEPS	EQU	0x60	; 96 steps = 2 full rotations (base has 360° freedom)
 CLAW_STEPS	EQU	0x60	; 96 steps = 2 full rotations
 ELBOW_STEPS	EQU	0x60	; 96 steps = 2 full rotations
 WRIST_STEPS	EQU	0x60	; 96 steps = 2 full rotations
