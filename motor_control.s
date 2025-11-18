@@ -39,10 +39,12 @@ STEP4	EQU	0x08	; Coil 4 ON, others OFF (RE0=0, RE1=0, RE2=0, RE3=1)
 
 ; Full-step drive constants (two coils at once - higher torque, ~30% more)
 ; Base motor uses full-step for better torque
-FULLSTEP1	EQU	0x03	; Coil 1 + Coil 2 ON (RE0=1, RE1=1, RE2=0, RE3=0)
-FULLSTEP2	EQU	0x06	; Coil 2 + Coil 3 ON (RE0=0, RE1=1, RE2=1, RE3=0)
-FULLSTEP3	EQU	0x0C	; Coil 3 + Coil 4 ON (RE0=0, RE1=0, RE2=1, RE3=1)
-FULLSTEP4	EQU	0x09	; Coil 4 + Coil 1 ON (RE0=1, RE1=0, RE2=0, RE3=1)
+; According to Philips documentation: Full-step sequence for 4-phase unipolar
+; Step 1: Coil 1 + Coil 4, Step 2: Coil 1 + Coil 3, Step 3: Coil 2 + Coil 3, Step 4: Coil 2 + Coil 4
+FULLSTEP1	EQU	0x09	; Coil 1 + Coil 4 ON (RE0=1, RE1=0, RE2=0, RE3=1)
+FULLSTEP2	EQU	0x05	; Coil 1 + Coil 3 ON (RE0=1, RE1=0, RE2=1, RE3=0)
+FULLSTEP3	EQU	0x06	; Coil 2 + Coil 3 ON (RE0=0, RE1=1, RE2=1, RE3=0)
+FULLSTEP4	EQU	0x0A	; Coil 2 + Coil 4 ON (RE0=0, RE1=1, RE2=0, RE3=1)
 
 ; Memory allocation for motor control
 clawStepIndex	EQU	0x0A	; Claw motor current step index (0-3)
