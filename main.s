@@ -15,15 +15,15 @@ setup:
 		bsf		EEPGD		; access Flash program memory
 		
 		; ******* Port Configuration (Motor Assignments) *******
-		; PORT E: Base Motor (bits 0-3) and Claw Motor (bits 4-7)
-		; PORT H: Elbow 1 Motor (bits 4-7) and Elbow 2 Motor (bits 0-3)
-		; PORT J: Wrist 1 Motor (bits 0-3) and Wrist 2 Motor (bits 4-7)
+		; PORT D: Claw Motor (bits 0-3) and Base Motor (bits 4-7)
+		; PORT E: Elbow 2 Motor (bits 0-3) and Elbow 1 Motor (bits 4-7)
+		; PORT F: Wrist 1 Motor (bits 0-3) and Wrist 2 Motor (bits 4-7)
 		movlw	0x00
-		movwf	TRISE, A    ; setup E as output (Base and Claw motors)
+		movwf	TRISD, A    ; setup D as output (Claw and Base motors)
 		movlw	0x00
-		movwf	TRISH, A    ; setup H as output (Elbow motors)
+		movwf	TRISE, A    ; setup E as output (Elbow motors)
 		movlw	0x00
-		movwf	TRISJ, A    ; setup J as output (Wrist motors)
+		movwf	TRISF, A    ; setup F as output (Wrist motors)
 		align	2			; ensure alignment of subsequent instructions
 		
 		; ******* Motor Control Setup *********************

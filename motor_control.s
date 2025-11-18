@@ -5,20 +5,20 @@ psect motor_code,class=CODE,reloc=2
 ; Multi-Motor Control Module for L298N Driver
 ; Unipolar Stepper Motor: 9904 112 35014 (6 terminals, 4-phase unipolar)
 ; Using L298N to drive individual coils (not as H-bridges)
-; BASE MOTOR - PORT E bits 0-3 (RE0=Coil1, RE1=Coil2, RE2=Coil3, RE3=Coil4)
-; CLAW MOTOR - PORT E bits 4-7 (RE4=Coil1, RE5=Coil2, RE6=Coil3, RE7=Coil4)
-; ELBOW 1 - PORT H bits 4-7 (RH4=Coil1, RH5=Coil2, RH6=Coil3, RH7=Coil4)
-; ELBOW 2 - PORT H bits 0-3 (RH0=Coil1, RH1=Coil2, RH2=Coil3, RH3=Coil4) - moves opposite
-; WRIST 1 - PORT J bits 0-3 (RJ0=Coil1, RJ1=Coil2, RJ2=Coil3, RJ3=Coil4)
-; WRIST 2 - PORT J bits 4-7 (RJ4=Coil1, RJ5=Coil2, RJ6=Coil3, RJ7=Coil4) - moves opposite
+; CLAW MOTOR - PORT D bits 0-3 (RD0=Coil1, RD1=Coil2, RD2=Coil3, RD3=Coil4)
+; BASE MOTOR - PORT D bits 4-7 (RD4=Coil1, RD5=Coil2, RD6=Coil3, RD7=Coil4)
+; ELBOW 1 - PORT E bits 4-7 (RE4=Coil1, RE5=Coil2, RE6=Coil3, RE7=Coil4)
+; ELBOW 2 - PORT E bits 0-3 (RE0=Coil1, RE1=Coil2, RE2=Coil3, RE3=Coil4) - moves opposite
+; WRIST 1 - PORT F bits 0-3 (RF0=Coil1, RF1=Coil2, RF2=Coil3, RF3=Coil4)
+; WRIST 2 - PORT F bits 4-7 (RF4=Coil1, RF5=Coil2, RF6=Coil3, RF7=Coil4) - moves opposite
 ; ENA/ENB: Connected to +5V (always enabled)
 ; ============================================
 
 ; Configuration constants - step counts for each degree of freedom
-BASE_STEPS	EQU	0x30	; 48 steps = 1 full rotation
-CLAW_STEPS	EQU	0x30	; 48 steps = 1 full rotation
-ELBOW_STEPS	EQU	0x30	; 48 steps = 1 full rotation
-WRIST_STEPS	EQU	0x30	; 48 steps = 1 full rotation
+BASE_STEPS	EQU	0x60	; 96 steps = 2 full rotations
+CLAW_STEPS	EQU	0x60	; 96 steps = 2 full rotations
+ELBOW_STEPS	EQU	0x60	; 96 steps = 2 full rotations
+WRIST_STEPS	EQU	0x60	; 96 steps = 2 full rotations
 BIDIR_TEST_STEPS	EQU	0x120	; 288 steps = 3 full rotations (legacy)
 
 ; Export functions for use in other modules
@@ -50,9 +50,37 @@ stepDelayL	EQU	0x0E	; Delay counter low byte for step timing
 pauseDelayH	EQU	0x0F	; Pause delay counter high byte
 pauseDelayL	EQU	0x10	; Pause delay counter low byte
 pauseOuter	EQU	0x11	; Outer loop counter for pause
-tempPortE	EQU	0x16	; Temporary storage for PORT E manipulation
-tempPortH	EQU	0x17	; Temporary storage for PORT H manipulation
-tempPortJ	EQU	0x18	; Temporary storage for PORT J manipulation
+tempPattern	EQU	0x16	; Temporary scratch register for pattern manipulation
+tempPattern2	EQU	0x17	; Additional scratch register
+tempPattern3	EQU	0x18	; Additional scratch register
+portDClawPattern	EQU	0x19	; Cached pattern for Claw (PORT D bits 0-3)
+portDBasePattern	EQU	0x1A	; Cached pattern for Base (PORT D bits 4-7)
+portEElbow2Pattern	EQU	0x1B	; Cached pattern for Elbow 2 (PORT E bits 0-3)
+portEElbow1Pattern	EQU	0x1C	; Cached pattern for Elbow 1 (PORT E bits 4-7)
+portFWrist1Pattern	EQU	0x1D	; Cached pattern for Wrist 1 (PORT F bits 0-3)
+portFWrist2Pattern	EQU	0x1E	; Cached pattern for Wrist 2 (PORT F bits 4-7)
+
+; ============================================
+; Helper routines: Write cached patterns to ports
+; Ensures both nibble partners update simultaneously
+; ============================================
+WritePortD:
+	movf	portDBasePattern, W, A
+	iorwf	portDClawPattern, W, A
+	movwf	LATD, A
+	return
+
+WritePortE:
+	movf	portEElbow1Pattern, W, A
+	iorwf	portEElbow2Pattern, W, A
+	movwf	LATE, A
+	return
+
+WritePortF:
+	movf	portFWrist2Pattern, W, A
+	iorwf	portFWrist1Pattern, W, A
+	movwf	LATF, A
+	return
 
 ; ============================================
 ; Motor_Init: Initialize all motors
@@ -68,26 +96,32 @@ Motor_Init:
 	movwf	wrist1StepIndex, A	; Wrist 1 starts at step 0
 	movwf	wrist2StepIndex, A	; Wrist 2 starts at step 0
 	
-	; Initialize PORT E: Base (bits 0-3) and Claw (bits 4-7)
+	; Initialize PORT D cache: Claw (low nibble) and Base (high nibble)
 	movlw	STEP1
-	movwf	tempPortE, A	; Base step pattern in bits 0-3
-	swapf	tempPortE, W, A	; Shift to bits 4-7 for Claw
-	iorwf	tempPortE, W, A	; Combine both
-	movwf	PORTE, A	; Set both Base and Claw initial step position
+	movwf	portDClawPattern, A
+	movlw	STEP1
+	movwf	tempPattern, A
+	swapf	tempPattern, W, A
+	movwf	portDBasePattern, A
+	call	WritePortD
 	
-	; Initialize PORT H: Elbow 1 (bits 4-7) and Elbow 2 (bits 0-3)
+	; Initialize PORT E cache: Elbow 2 (low) and Elbow 1 (high)
 	movlw	STEP1
-	movwf	tempPortH, A	; Elbow 2 step pattern in bits 0-3
-	swapf	tempPortH, W, A	; Shift to bits 4-7 for Elbow 1
-	iorwf	tempPortH, W, A	; Combine both
-	movwf	PORTH, A	; Set both Elbow motors initial step position
+	movwf	portEElbow2Pattern, A
+	movlw	STEP1
+	movwf	tempPattern, A
+	swapf	tempPattern, W, A
+	movwf	portEElbow1Pattern, A
+	call	WritePortE
 	
-	; Initialize PORT J: Wrist 1 (bits 0-3) and Wrist 2 (bits 4-7)
+	; Initialize PORT F cache: Wrist 1 (low) and Wrist 2 (high)
 	movlw	STEP1
-	movwf	tempPortJ, A	; Wrist 1 step pattern in bits 0-3
-	swapf	tempPortJ, W, A	; Shift to bits 4-7 for Wrist 2
-	iorwf	tempPortJ, W, A	; Combine both
-	movwf	PORTJ, A	; Set both Wrist motors initial step position
+	movwf	portFWrist1Pattern, A
+	movlw	STEP1
+	movwf	tempPattern, A
+	swapf	tempPattern, W, A
+	movwf	portFWrist2Pattern, A
+	call	WritePortF
 	
 	return
 
@@ -144,9 +178,9 @@ return_step3:
 	return
 
 ; ============================================
-; Claw_StepForward: Execute one step forward on claw motor (PORT E bits 4-7)
+; Claw_StepForward: Execute one step forward on claw motor (PORT D bits 0-3)
 ; Advances to next step in sequence (0->1->2->3->0)
-; Preserves Base motor state (bits 0-3)
+; Preserves Base motor state (bits 4-7) via cached write to PORT D
 ; ============================================
 Claw_StepForward:
 	movf	clawStepIndex, W, A	; Load current step index
@@ -157,22 +191,14 @@ Claw_StepForward:
 	; Get step pattern for current index
 	movf	clawStepIndex, W, A
 	call	GetStepValue	; Get step pattern (bits 0-3)
-	
-	; Shift pattern to bits 4-7 for Claw
-	swapf	WREG, W, A	; Shift left by 4 bits
-	movwf	tempPortE, A	; Save shifted pattern
-	
-	; Read current PORT E and preserve Base (bits 0-3)
-	movf	PORTE, W, A	; Read current PORT E
-	andlw	0x0F		; Keep only Base bits (0-3)
-	iorwf	tempPortE, W, A	; Combine with Claw pattern
-	movwf	PORTE, A	; Write back to PORT E
+	movwf	portDClawPattern, A
+	call	WritePortD
 	return
 
 ; ============================================
-; Claw_StepBackward: Execute one step backward on claw motor (PORT E bits 4-7)
+; Claw_StepBackward: Execute one step backward on claw motor (PORT D bits 0-3)
 ; Moves to previous step in sequence (0->3->2->1->0)
-; Preserves Base motor state (bits 0-3)
+; Preserves Base motor state (bits 4-7) via cached write to PORT D
 ; ============================================
 Claw_StepBackward:
 	movf	clawStepIndex, W, A	; Load current step index
@@ -183,22 +209,14 @@ Claw_StepBackward:
 	; Get step pattern for current index
 	movf	clawStepIndex, W, A
 	call	GetStepValue	; Get step pattern (bits 0-3)
-	
-	; Shift pattern to bits 4-7 for Claw
-	swapf	WREG, W, A	; Shift left by 4 bits
-	movwf	tempPortE, A	; Save shifted pattern
-	
-	; Read current PORT E and preserve Base (bits 0-3)
-	movf	PORTE, W, A	; Read current PORT E
-	andlw	0x0F		; Keep only Base bits (0-3)
-	iorwf	tempPortE, W, A	; Combine with Claw pattern
-	movwf	PORTE, A	; Write back to PORT E
+	movwf	portDClawPattern, A
+	call	WritePortD
 	return
 
 ; ============================================
-; Base_StepForward: Execute one step forward on base motor (PORT E bits 0-3)
+; Base_StepForward: Execute one step forward on base motor (PORT D bits 4-7)
 ; Advances to next step in sequence (0->1->2->3->0)
-; Preserves Claw motor state (bits 4-7)
+; Preserves Claw motor state (bits 0-3) via cached write to PORT D
 ; ============================================
 Base_StepForward:
 	movf	baseStepIndex, W, A	; Load current step index
@@ -209,19 +227,16 @@ Base_StepForward:
 	; Get step pattern for current index
 	movf	baseStepIndex, W, A
 	call	GetStepValue	; Get step pattern (bits 0-3)
-	movwf	tempPortE, A	; Save Base pattern
-	
-	; Read current PORT E and preserve Claw (bits 4-7)
-	movf	PORTE, W, A	; Read current PORT E
-	andlw	0xF0		; Keep only Claw bits (4-7)
-	iorwf	tempPortE, W, A	; Combine with Base pattern
-	movwf	PORTE, A	; Write back to PORT E
+	movwf	tempPattern, A
+	swapf	tempPattern, W, A	; Shift into upper nibble
+	movwf	portDBasePattern, A
+	call	WritePortD
 	return
 
 ; ============================================
-; Base_StepBackward: Execute one step backward on base motor (PORT E bits 0-3)
+; Base_StepBackward: Execute one step backward on base motor (PORT D bits 4-7)
 ; Moves to previous step in sequence (0->3->2->1->0)
-; Preserves Claw motor state (bits 4-7)
+; Preserves Claw motor state (bits 0-3) via cached write to PORT D
 ; ============================================
 Base_StepBackward:
 	movf	baseStepIndex, W, A	; Load current step index
@@ -232,245 +247,122 @@ Base_StepBackward:
 	; Get step pattern for current index
 	movf	baseStepIndex, W, A
 	call	GetStepValue	; Get step pattern (bits 0-3)
-	movwf	tempPortE, A	; Save Base pattern
-	
-	; Read current PORT E and preserve Claw (bits 4-7)
-	movf	PORTE, W, A	; Read current PORT E
-	andlw	0xF0		; Keep only Claw bits (4-7)
-	iorwf	tempPortE, W, A	; Combine with Base pattern
-	movwf	PORTE, A	; Write back to PORT E
+	movwf	tempPattern, A
+	swapf	tempPattern, W, A	; Shift into upper nibble
+	movwf	portDBasePattern, A
+	call	WritePortD
 	return
 
 ; ============================================
-; Elbow1_StepForward: Execute one step forward on Elbow 1 (PORT H bits 4-7)
-; Advances to next step in sequence (0->1->2->3->0)
-; Preserves Elbow 2 motor state (bits 0-3)
-; ============================================
-Elbow1_StepForward:
-	movf	elbow1StepIndex, W, A	; Load current step index
-	addlw	0x01		; Increment step index
-	andlw	0x03		; Wrap around (0-3)
-	movwf	elbow1StepIndex, A	; Save new step index
-	
-	; Get step pattern for current index
-	movf	elbow1StepIndex, W, A
-	call	GetStepValue	; Get step pattern (bits 0-3)
-	
-	; Shift pattern to bits 4-7 for Elbow 1
-	swapf	WREG, W, A	; Shift left by 4 bits
-	movwf	tempPortH, A	; Save shifted pattern
-	
-	; Read current PORT H and preserve Elbow 2 (bits 0-3)
-	movf	PORTH, W, A	; Read current PORT H
-	andlw	0x0F		; Keep only Elbow 2 bits (0-3)
-	iorwf	tempPortH, W, A	; Combine with Elbow 1 pattern
-	movwf	PORTH, A	; Write back to PORT H
-	return
-
-; ============================================
-; Elbow1_StepBackward: Execute one step backward on Elbow 1 (PORT H bits 4-7)
-; Moves to previous step in sequence (0->3->2->1->0)
-; Preserves Elbow 2 motor state (bits 0-3)
-; ============================================
-Elbow1_StepBackward:
-	movf	elbow1StepIndex, W, A	; Load current step index
-	addlw	0x03		; Decrement by adding 3 (wraps correctly)
-	andlw	0x03		; Wrap around (0-3)
-	movwf	elbow1StepIndex, A	; Save new step index
-	
-	; Get step pattern for current index
-	movf	elbow1StepIndex, W, A
-	call	GetStepValue	; Get step pattern (bits 0-3)
-	
-	; Shift pattern to bits 4-7 for Elbow 1
-	swapf	WREG, W, A	; Shift left by 4 bits
-	movwf	tempPortH, A	; Save shifted pattern
-	
-	; Read current PORT H and preserve Elbow 2 (bits 0-3)
-	movf	PORTH, W, A	; Read current PORT H
-	andlw	0x0F		; Keep only Elbow 2 bits (0-3)
-	iorwf	tempPortH, W, A	; Combine with Elbow 1 pattern
-	movwf	PORTH, A	; Write back to PORT H
-	return
-
-; ============================================
-; Elbow2_StepForward: Execute one step forward on Elbow 2 (PORT H bits 0-3)
-; Advances to next step in sequence (0->1->2->3->0)
-; Preserves Elbow 1 motor state (bits 4-7)
-; ============================================
-Elbow2_StepForward:
-	movf	elbow2StepIndex, W, A	; Load current step index
-	addlw	0x01		; Increment step index
-	andlw	0x03		; Wrap around (0-3)
-	movwf	elbow2StepIndex, A	; Save new step index
-	
-	; Get step pattern for current index
-	movf	elbow2StepIndex, W, A
-	call	GetStepValue	; Get step pattern (bits 0-3)
-	movwf	tempPortH, A	; Save Elbow 2 pattern
-	
-	; Read current PORT H and preserve Elbow 1 (bits 4-7)
-	movf	PORTH, W, A	; Read current PORT H
-	andlw	0xF0		; Keep only Elbow 1 bits (4-7)
-	iorwf	tempPortH, W, A	; Combine with Elbow 2 pattern
-	movwf	PORTH, A	; Write back to PORT H
-	return
-
-; ============================================
-; Elbow2_StepBackward: Execute one step backward on Elbow 2 (PORT H bits 0-3)
-; Moves to previous step in sequence (0->3->2->1->0)
-; Preserves Elbow 1 motor state (bits 4-7)
-; ============================================
-Elbow2_StepBackward:
-	movf	elbow2StepIndex, W, A	; Load current step index
-	addlw	0x03		; Decrement by adding 3 (wraps correctly)
-	andlw	0x03		; Wrap around (0-3)
-	movwf	elbow2StepIndex, A	; Save new step index
-	
-	; Get step pattern for current index
-	movf	elbow2StepIndex, W, A
-	call	GetStepValue	; Get step pattern (bits 0-3)
-	movwf	tempPortH, A	; Save Elbow 2 pattern
-	
-	; Read current PORT H and preserve Elbow 1 (bits 4-7)
-	movf	PORTH, W, A	; Read current PORT H
-	andlw	0xF0		; Keep only Elbow 1 bits (4-7)
-	iorwf	tempPortH, W, A	; Combine with Elbow 2 pattern
-	movwf	PORTH, A	; Write back to PORT H
-	return
-
-; ============================================
-; Elbow_StepForward: Step both Elbow motors forward (Elbow 1 forward, Elbow 2 backward)
-; Elbow 2 moves opposite to Elbow 1 for gear train synchronization
+; Elbow_StepForward: Step both Elbow motors (Elbow 1 forward, Elbow 2 backward)
+; Uses cached patterns to update PORTE simultaneously
 ; ============================================
 Elbow_StepForward:
-	call	Elbow1_StepForward	; Step Elbow 1 forward
-	call	Elbow2_StepBackward	; Step Elbow 2 backward (opposite direction)
+	; Elbow 1 forward (upper nibble)
+	movf	elbow1StepIndex, W, A
+	addlw	0x01
+	andlw	0x03
+	movwf	elbow1StepIndex, A
+	movf	elbow1StepIndex, W, A
+	call	GetStepValue
+	movwf	tempPattern, A
+	swapf	tempPattern, W, A
+	movwf	portEElbow1Pattern, A
+	
+	; Elbow 2 backward (lower nibble)
+	movf	elbow2StepIndex, W, A
+	addlw	0x03
+	andlw	0x03
+	movwf	elbow2StepIndex, A
+	movf	elbow2StepIndex, W, A
+	call	GetStepValue
+	movwf	portEElbow2Pattern, A
+	
+	call	WritePortE
 	return
 
 ; ============================================
-; Elbow_StepBackward: Step both Elbow motors backward (Elbow 1 backward, Elbow 2 forward)
-; Elbow 2 moves opposite to Elbow 1 for gear train synchronization
+; Elbow_StepBackward: Step both Elbow motors (Elbow 1 backward, Elbow 2 forward)
+; Uses cached patterns to update PORTE simultaneously
 ; ============================================
 Elbow_StepBackward:
-	call	Elbow1_StepBackward	; Step Elbow 1 backward
-	call	Elbow2_StepForward	; Step Elbow 2 forward (opposite direction)
+	; Elbow 1 backward (upper nibble)
+	movf	elbow1StepIndex, W, A
+	addlw	0x03
+	andlw	0x03
+	movwf	elbow1StepIndex, A
+	movf	elbow1StepIndex, W, A
+	call	GetStepValue
+	movwf	tempPattern, A
+	swapf	tempPattern, W, A
+	movwf	portEElbow1Pattern, A
+	
+	; Elbow 2 forward (lower nibble)
+	movf	elbow2StepIndex, W, A
+	addlw	0x01
+	andlw	0x03
+	movwf	elbow2StepIndex, A
+	movf	elbow2StepIndex, W, A
+	call	GetStepValue
+	movwf	portEElbow2Pattern, A
+	
+	call	WritePortE
 	return
 
 ; ============================================
-; Wrist1_StepForward: Execute one step forward on Wrist 1 (PORT J bits 0-3)
-; Advances to next step in sequence (0->1->2->3->0)
-; Preserves Wrist 2 motor state (bits 4-7)
-; ============================================
-Wrist1_StepForward:
-	movf	wrist1StepIndex, W, A	; Load current step index
-	addlw	0x01		; Increment step index
-	andlw	0x03		; Wrap around (0-3)
-	movwf	wrist1StepIndex, A	; Save new step index
-	
-	; Get step pattern for current index
-	movf	wrist1StepIndex, W, A
-	call	GetStepValue	; Get step pattern (bits 0-3)
-	movwf	tempPortJ, A	; Save Wrist 1 pattern
-	
-	; Read current PORT J and preserve Wrist 2 (bits 4-7)
-	movf	PORTJ, W, A	; Read current PORT J
-	andlw	0xF0		; Keep only Wrist 2 bits (4-7)
-	iorwf	tempPortJ, W, A	; Combine with Wrist 1 pattern
-	movwf	PORTJ, A	; Write back to PORT J
-	return
-
-; ============================================
-; Wrist1_StepBackward: Execute one step backward on Wrist 1 (PORT J bits 0-3)
-; Moves to previous step in sequence (0->3->2->1->0)
-; Preserves Wrist 2 motor state (bits 4-7)
-; ============================================
-Wrist1_StepBackward:
-	movf	wrist1StepIndex, W, A	; Load current step index
-	addlw	0x03		; Decrement by adding 3 (wraps correctly)
-	andlw	0x03		; Wrap around (0-3)
-	movwf	wrist1StepIndex, A	; Save new step index
-	
-	; Get step pattern for current index
-	movf	wrist1StepIndex, W, A
-	call	GetStepValue	; Get step pattern (bits 0-3)
-	movwf	tempPortJ, A	; Save Wrist 1 pattern
-	
-	; Read current PORT J and preserve Wrist 2 (bits 4-7)
-	movf	PORTJ, W, A	; Read current PORT J
-	andlw	0xF0		; Keep only Wrist 2 bits (4-7)
-	iorwf	tempPortJ, W, A	; Combine with Wrist 1 pattern
-	movwf	PORTJ, A	; Write back to PORT J
-	return
-
-; ============================================
-; Wrist2_StepForward: Execute one step forward on Wrist 2 (PORT J bits 4-7)
-; Advances to next step in sequence (0->1->2->3->0)
-; Preserves Wrist 1 motor state (bits 0-3)
-; ============================================
-Wrist2_StepForward:
-	movf	wrist2StepIndex, W, A	; Load current step index
-	addlw	0x01		; Increment step index
-	andlw	0x03		; Wrap around (0-3)
-	movwf	wrist2StepIndex, A	; Save new step index
-	
-	; Get step pattern for current index
-	movf	wrist2StepIndex, W, A
-	call	GetStepValue	; Get step pattern (bits 0-3)
-	
-	; Shift pattern to bits 4-7 for Wrist 2
-	swapf	WREG, W, A	; Shift left by 4 bits
-	movwf	tempPortJ, A	; Save shifted pattern
-	
-	; Read current PORT J and preserve Wrist 1 (bits 0-3)
-	movf	PORTJ, W, A	; Read current PORT J
-	andlw	0x0F		; Keep only Wrist 1 bits (0-3)
-	iorwf	tempPortJ, W, A	; Combine with Wrist 2 pattern
-	movwf	PORTJ, A	; Write back to PORT J
-	return
-
-; ============================================
-; Wrist2_StepBackward: Execute one step backward on Wrist 2 (PORT J bits 4-7)
-; Moves to previous step in sequence (0->3->2->1->0)
-; Preserves Wrist 1 motor state (bits 0-3)
-; ============================================
-Wrist2_StepBackward:
-	movf	wrist2StepIndex, W, A	; Load current step index
-	addlw	0x03		; Decrement by adding 3 (wraps correctly)
-	andlw	0x03		; Wrap around (0-3)
-	movwf	wrist2StepIndex, A	; Save new step index
-	
-	; Get step pattern for current index
-	movf	wrist2StepIndex, W, A
-	call	GetStepValue	; Get step pattern (bits 0-3)
-	
-	; Shift pattern to bits 4-7 for Wrist 2
-	swapf	WREG, W, A	; Shift left by 4 bits
-	movwf	tempPortJ, A	; Save shifted pattern
-	
-	; Read current PORT J and preserve Wrist 1 (bits 0-3)
-	movf	PORTJ, W, A	; Read current PORT J
-	andlw	0x0F		; Keep only Wrist 1 bits (0-3)
-	iorwf	tempPortJ, W, A	; Combine with Wrist 2 pattern
-	movwf	PORTJ, A	; Write back to PORT J
-	return
-
-; ============================================
-; Wrist_StepForward: Step both Wrist motors forward (Wrist 1 forward, Wrist 2 backward)
-; Wrist 2 moves opposite to Wrist 1 for gear train synchronization
+; Wrist_StepForward: Step both Wrist motors (Wrist 1 forward, Wrist 2 backward)
+; Uses cached patterns to update PORTF simultaneously
 ; ============================================
 Wrist_StepForward:
-	call	Wrist1_StepForward	; Step Wrist 1 forward
-	call	Wrist2_StepBackward	; Step Wrist 2 backward (opposite direction)
+	; Wrist 1 forward (lower nibble)
+	movf	wrist1StepIndex, W, A
+	addlw	0x01
+	andlw	0x03
+	movwf	wrist1StepIndex, A
+	movf	wrist1StepIndex, W, A
+	call	GetStepValue
+	movwf	portFWrist1Pattern, A
+	
+	; Wrist 2 backward (upper nibble)
+	movf	wrist2StepIndex, W, A
+	addlw	0x03
+	andlw	0x03
+	movwf	wrist2StepIndex, A
+	movf	wrist2StepIndex, W, A
+	call	GetStepValue
+	movwf	tempPattern, A
+	swapf	tempPattern, W, A
+	movwf	portFWrist2Pattern, A
+	
+	call	WritePortF
 	return
 
 ; ============================================
-; Wrist_StepBackward: Step both Wrist motors backward (Wrist 1 backward, Wrist 2 forward)
-; Wrist 2 moves opposite to Wrist 1 for gear train synchronization
+; Wrist_StepBackward: Step both Wrist motors (Wrist 1 backward, Wrist 2 forward)
+; Uses cached patterns to update PORTF simultaneously
 ; ============================================
 Wrist_StepBackward:
-	call	Wrist1_StepBackward	; Step Wrist 1 backward
-	call	Wrist2_StepForward	; Step Wrist 2 forward (opposite direction)
+	; Wrist 1 backward (lower nibble)
+	movf	wrist1StepIndex, W, A
+	addlw	0x03
+	andlw	0x03
+	movwf	wrist1StepIndex, A
+	movf	wrist1StepIndex, W, A
+	call	GetStepValue
+	movwf	portFWrist1Pattern, A
+	
+	; Wrist 2 forward (upper nibble)
+	movf	wrist2StepIndex, W, A
+	addlw	0x01
+	andlw	0x03
+	movwf	wrist2StepIndex, A
+	movf	wrist2StepIndex, W, A
+	call	GetStepValue
+	movwf	tempPattern, A
+	swapf	tempPattern, W, A
+	movwf	portFWrist2Pattern, A
+	
+	call	WritePortF
 	return
 
 ; ============================================
