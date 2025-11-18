@@ -8,9 +8,9 @@ psect motor_code,class=CODE,reloc=2
 ; CLAW MOTOR - PORT D bits 0-3 (RD0=Coil1, RD1=Coil2, RD2=Coil3, RD3=Coil4)
 ; BASE MOTOR - PORT D bits 4-7 (RD4=Coil1, RD5=Coil2, RD6=Coil3, RD7=Coil4)
 ; ELBOW 1 - PORT E bits 4-7 (RE4=Coil1, RE5=Coil2, RE6=Coil3, RE7=Coil4)
-; ELBOW 2 - PORT E bits 0-3 (RE0=Coil1, RE1=Coil2, RE2=Coil3, RE3=Coil4) - moves opposite
-; WRIST 1 - PORT F bits 0-3 (RF0=Coil1, RF1=Coil2, RF2=Coil3, RF3=Coil4)
-; WRIST 2 - PORT F bits 4-7 (RF4=Coil1, RF5=Coil2, RF6=Coil3, RF7=Coil4) - moves opposite
+; ELBOW 2 - PORT E bits 0-3 (RE0=Coil1, RE1=Coil2, RE2=Coil3, RE3=Coil4) - moves same direction (test)
+; WRIST 1 - PORT H bits 0-3 (RH0=Coil1, RH1=Coil2, RH2=Coil3, RH3=Coil4)
+; WRIST 2 - PORT H bits 4-7 (RH4=Coil1, RH5=Coil2, RH6=Coil3, RH7=Coil4) - moves same direction (test)
 ; ENA/ENB: Connected to +5V (always enabled)
 ; ============================================
 
@@ -57,8 +57,8 @@ portDClawPattern	EQU	0x19	; Cached pattern for Claw (PORT D bits 0-3)
 portDBasePattern	EQU	0x1A	; Cached pattern for Base (PORT D bits 4-7)
 portEElbow2Pattern	EQU	0x1B	; Cached pattern for Elbow 2 (PORT E bits 0-3)
 portEElbow1Pattern	EQU	0x1C	; Cached pattern for Elbow 1 (PORT E bits 4-7)
-portFWrist1Pattern	EQU	0x1D	; Cached pattern for Wrist 1 (PORT F bits 0-3)
-portFWrist2Pattern	EQU	0x1E	; Cached pattern for Wrist 2 (PORT F bits 4-7)
+portHWrist1Pattern	EQU	0x1D	; Cached pattern for Wrist 1 (PORT H bits 0-3)
+portHWrist2Pattern	EQU	0x1E	; Cached pattern for Wrist 2 (PORT H bits 4-7)
 
 ; ============================================
 ; Helper routines: Write cached patterns to ports
@@ -76,10 +76,10 @@ WritePortE:
 	movwf	LATE, A
 	return
 
-WritePortF:
-	movf	portFWrist2Pattern, W, A
-	iorwf	portFWrist1Pattern, W, A
-	movwf	LATF, A
+WritePortH:
+	movf	portHWrist2Pattern, W, A
+	iorwf	portHWrist1Pattern, W, A
+	movwf	LATH, A
 	return
 
 ; ============================================
@@ -114,14 +114,14 @@ Motor_Init:
 	movwf	portEElbow1Pattern, A
 	call	WritePortE
 	
-	; Initialize PORT F cache: Wrist 1 (low) and Wrist 2 (high)
+	; Initialize PORT H cache: Wrist 1 (low) and Wrist 2 (high)
 	movlw	STEP1
-	movwf	portFWrist1Pattern, A
+	movwf	portHWrist1Pattern, A
 	movlw	STEP1
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A
-	movwf	portFWrist2Pattern, A
-	call	WritePortF
+	movwf	portHWrist2Pattern, A
+	call	WritePortH
 	
 	return
 
@@ -254,7 +254,7 @@ Base_StepBackward:
 	return
 
 ; ============================================
-; Elbow_StepForward: Step both Elbow motors (Elbow 1 forward, Elbow 2 backward)
+; Elbow_StepForward: Step both Elbow motors forward (same direction - test)
 ; Uses cached patterns to update PORTE simultaneously
 ; ============================================
 Elbow_StepForward:
@@ -269,9 +269,9 @@ Elbow_StepForward:
 	swapf	tempPattern, W, A
 	movwf	portEElbow1Pattern, A
 	
-	; Elbow 2 backward (lower nibble)
+	; Elbow 2 forward (lower nibble) - same direction
 	movf	elbow2StepIndex, W, A
-	addlw	0x03
+	addlw	0x01
 	andlw	0x03
 	movwf	elbow2StepIndex, A
 	movf	elbow2StepIndex, W, A
@@ -282,7 +282,7 @@ Elbow_StepForward:
 	return
 
 ; ============================================
-; Elbow_StepBackward: Step both Elbow motors (Elbow 1 backward, Elbow 2 forward)
+; Elbow_StepBackward: Step both Elbow motors backward (same direction - test)
 ; Uses cached patterns to update PORTE simultaneously
 ; ============================================
 Elbow_StepBackward:
@@ -297,9 +297,9 @@ Elbow_StepBackward:
 	swapf	tempPattern, W, A
 	movwf	portEElbow1Pattern, A
 	
-	; Elbow 2 forward (lower nibble)
+	; Elbow 2 backward (lower nibble) - same direction
 	movf	elbow2StepIndex, W, A
-	addlw	0x01
+	addlw	0x03
 	andlw	0x03
 	movwf	elbow2StepIndex, A
 	movf	elbow2StepIndex, W, A
@@ -310,8 +310,8 @@ Elbow_StepBackward:
 	return
 
 ; ============================================
-; Wrist_StepForward: Step both Wrist motors (Wrist 1 forward, Wrist 2 backward)
-; Uses cached patterns to update PORTF simultaneously
+; Wrist_StepForward: Step both Wrist motors forward (same direction - test)
+; Uses cached patterns to update PORTH simultaneously
 ; ============================================
 Wrist_StepForward:
 	; Wrist 1 forward (lower nibble)
@@ -321,25 +321,25 @@ Wrist_StepForward:
 	movwf	wrist1StepIndex, A
 	movf	wrist1StepIndex, W, A
 	call	GetStepValue
-	movwf	portFWrist1Pattern, A
+	movwf	portHWrist1Pattern, A
 	
-	; Wrist 2 backward (upper nibble)
+	; Wrist 2 forward (upper nibble) - same direction
 	movf	wrist2StepIndex, W, A
-	addlw	0x03
+	addlw	0x01
 	andlw	0x03
 	movwf	wrist2StepIndex, A
 	movf	wrist2StepIndex, W, A
 	call	GetStepValue
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A
-	movwf	portFWrist2Pattern, A
+	movwf	portHWrist2Pattern, A
 	
-	call	WritePortF
+	call	WritePortH
 	return
 
 ; ============================================
-; Wrist_StepBackward: Step both Wrist motors (Wrist 1 backward, Wrist 2 forward)
-; Uses cached patterns to update PORTF simultaneously
+; Wrist_StepBackward: Step both Wrist motors backward (same direction - test)
+; Uses cached patterns to update PORTH simultaneously
 ; ============================================
 Wrist_StepBackward:
 	; Wrist 1 backward (lower nibble)
@@ -349,20 +349,20 @@ Wrist_StepBackward:
 	movwf	wrist1StepIndex, A
 	movf	wrist1StepIndex, W, A
 	call	GetStepValue
-	movwf	portFWrist1Pattern, A
+	movwf	portHWrist1Pattern, A
 	
-	; Wrist 2 forward (upper nibble)
+	; Wrist 2 backward (upper nibble) - same direction
 	movf	wrist2StepIndex, W, A
-	addlw	0x01
+	addlw	0x03
 	andlw	0x03
 	movwf	wrist2StepIndex, A
 	movf	wrist2StepIndex, W, A
 	call	GetStepValue
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A
-	movwf	portFWrist2Pattern, A
+	movwf	portHWrist2Pattern, A
 	
-	call	WritePortF
+	call	WritePortH
 	return
 
 ; ============================================
