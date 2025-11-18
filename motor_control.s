@@ -107,10 +107,10 @@ Motor_Init:
 	movwf	wrist2StepIndex, A	; Wrist 2 starts at step 0
 	
 	; Initialize PORT D cache: Claw (low nibble) and Base (high nibble)
-	; Claw uses wave drive, Base uses full-step drive for higher torque
+	; Both use wave drive (one coil at a time)
 	movlw	STEP1
 	movwf	portDClawPattern, A
-	movlw	FULLSTEP1	; Base uses full-step (two coils) for more torque
+	movlw	STEP1	; Base uses wave drive (one coil at a time)
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A
 	movwf	portDBasePattern, A
@@ -259,7 +259,7 @@ Claw_StepBackward:
 
 ; ============================================
 ; Base_StepForward: Execute one step forward on base motor (PORT D bits 4-7)
-; Uses FULL-STEP mode (two coils) for higher torque
+; Uses WAVE DRIVE mode (one coil at a time)
 ; Advances to next step in sequence (0->1->2->3->0)
 ; Preserves Claw motor state (bits 0-3) via cached write to PORT D
 ; ============================================
@@ -269,9 +269,9 @@ Base_StepForward:
 	andlw	0x03		; Wrap around (0-3)
 	movwf	baseStepIndex, A	; Save new step index
 	
-	; Get full-step pattern for current index (two coils for more torque)
+	; Get wave drive pattern for current index (one coil at a time)
 	movf	baseStepIndex, W, A
-	call	GetFullStepValue	; Get full-step pattern (bits 0-3)
+	call	GetStepValue	; Get wave drive pattern (bits 0-3)
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A	; Shift into upper nibble
 	movwf	portDBasePattern, A
@@ -280,7 +280,7 @@ Base_StepForward:
 
 ; ============================================
 ; Base_StepBackward: Execute one step backward on base motor (PORT D bits 4-7)
-; Uses FULL-STEP mode (two coils) for higher torque
+; Uses WAVE DRIVE mode (one coil at a time)
 ; Moves to previous step in sequence (0->3->2->1->0)
 ; Preserves Claw motor state (bits 0-3) via cached write to PORT D
 ; ============================================
@@ -290,9 +290,9 @@ Base_StepBackward:
 	andlw	0x03		; Wrap around (0-3)
 	movwf	baseStepIndex, A	; Save new step index
 	
-	; Get full-step pattern for current index (two coils for more torque)
+	; Get wave drive pattern for current index (one coil at a time)
 	movf	baseStepIndex, W, A
-	call	GetFullStepValue	; Get full-step pattern (bits 0-3)
+	call	GetStepValue	; Get wave drive pattern (bits 0-3)
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A	; Shift into upper nibble
 	movwf	portDBasePattern, A
