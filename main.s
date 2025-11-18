@@ -18,6 +18,17 @@ setup:
 		; PORT D: Claw Motor (bits 0-3) and Base Motor (bits 4-7)
 		; PORT E: Elbow 2 Motor (bits 0-3) and Elbow 1 Motor (bits 4-7)
 		; PORT F: Wrist 1 Motor (bits 0-3) and Wrist 2 Motor (bits 4-7)
+		
+		; Configure PORT F as digital I/O (disable analog functions)
+		; ANCON1 controls PORT F analog/digital mode (not in access RAM)
+		movlb	0x0F		; Set BSR to bank 15 (0x0F) for ANCON1 access
+		; ANCON1 bits 0-7 control RF0-RF7: 0 = Digital, 1 = Analog
+		; Clear all bits to set PORT F as digital
+		movlw	0x00
+		movwf	ANCON1, A	; Set all PORT F pins to digital mode
+		movlb	0x00		; Restore BSR to bank 0
+		
+		; Configure all ports as outputs
 		movlw	0x00
 		movwf	TRISD, A    ; setup D as output (Claw and Base motors)
 		movlw	0x00
