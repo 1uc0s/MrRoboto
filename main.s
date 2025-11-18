@@ -1,6 +1,6 @@
 #include <xc.inc>
 
-extrn	Motor_Init, Motor_BidirectionalTest  ; external subroutines
+extrn	Motor_Init, Motor_SequentialDemo  ; external subroutines
 
 psect code, abs
 main:
@@ -15,29 +15,26 @@ setup:
 		bsf		EEPGD		; access Flash program memory
 		
 		; ******* Port Configuration (Motor Assignments) *******
-		; PORT E: Claw Motor (single motor)
-		; PORT F: Base Motor (single motor)
-		; PORT G: Wrist Motors (pair - future expansion)
-		; PORT H: Elbow Motors (pair - future expansion)
+		; PORT E: Base Motor (bits 0-3) and Claw Motor (bits 4-7)
+		; PORT H: Elbow 1 Motor (bits 4-7) and Elbow 2 Motor (bits 0-3)
+		; PORT J: Wrist 1 Motor (bits 0-3) and Wrist 2 Motor (bits 4-7)
 		movlw	0x00
-		movwf	TRISH, A    ; setup H as output (Elbow motors - future)
+		movwf	TRISE, A    ; setup E as output (Base and Claw motors)
 		movlw	0x00
-		movwf	TRISG, A    ; setup G as output (Wrist motors - future)
+		movwf	TRISH, A    ; setup H as output (Elbow motors)
 		movlw	0x00
-		movwf	TRISF, A    ; setup F as output (Base motor)
-		movlw	0x00
-		movwf	TRISE, A    ; setup E as output (Claw motor)
+		movwf	TRISJ, A    ; setup J as output (Wrist motors)
 		align	2			; ensure alignment of subsequent instructions
 		
 		; ******* Motor Control Setup *********************
-		call	Motor_Init		; Initialize Claw and Base motors
+		call	Motor_Init		; Initialize all motors (Base, Claw, Elbow, Wrist)
 		goto	start
 
 start:		
-		; Main loop: Run bidirectional motor test continuously
-		; Tests both Claw (PORT E) and Base (PORT F) motors simultaneously
+		; Main loop: Run sequential demo continuously
+		; Cycles through all 4 degrees of freedom (Base, Claw, Elbow, Wrist)
 loop:	
-		call	Motor_BidirectionalTest	; Execute bidirectional test on both motors
+		call	Motor_SequentialDemo	; Execute sequential demo on all DOFs
 		bra		loop			; Loop forever
 	
 	end main
