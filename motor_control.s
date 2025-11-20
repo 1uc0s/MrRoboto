@@ -22,8 +22,8 @@ SHOULDER_STEPS	EQU	0x60	; 96 steps = 2 full rotations
 ELBOW_STEPS	EQU	0x60	; 96 steps = 2 full rotations
 WRIST_STEPS	EQU	0x60	; 96 steps = 2 full rotations
 BIDIR_TEST_STEPS	EQU	0x120	; 288 steps = 3 full rotations (legacy)
-MOTOR_STEPS_PER_SEC	EQU	30	; Motor speed in steps per second (30 = max torque config per datasheet)
-BASE_STEPS_PER_SEC	EQU	30	; Base motor speed in steps per second (30 = match other motors)
+MOTOR_STEPS_PER_SEC	EQU	100	; Motor speed in steps per second (100 = faster)
+BASE_STEPS_PER_SEC	EQU	100	; Base motor speed in steps per second (100 = faster)
 
 ; Export functions for use in other modules
 global	Motor_Init, Motor_BidirectionalTest, Motor_StepForward, Motor_StepBackward, Motor_StepsForward, Motor_StepsBackward, Motor_StepDelay
@@ -458,27 +458,21 @@ Both_StepBackward:
 
 ; ============================================
 ; Motor_StepDelay: Delay between steps (configurable via MOTOR_STEPS_PER_SEC)
-; Target: MOTOR_STEPS_PER_SEC steps per second (default: 30 steps/s = max torque config)
-; Delay per step = 1 / MOTOR_STEPS_PER_SEC seconds
+; Target: MOTOR_STEPS_PER_SEC steps per second (currently 100)
 ; Config: 16MHz crystal with PLL x4 enabled = 64MHz system clock
 ; Instruction cycle = 4 clocks, so instruction rate = 64MHz / 4 = 16 MIPS
-; For 30 steps/s: delay = 1/30 = 0.03333 seconds
-; Required cycles = 0.03333 × 16,000,000 = 533,333 cycles
+; For 100 steps/s: delay = 1/100 = 0.010 seconds
+; Required cycles = 0.010 * 16,000,000 = 160,000 cycles
 ; Each iteration: ~2 cycles (decf + bnz when taken)
-; Required iterations = 533,333 / 2 = 266,667 iterations
-; Implementation: 667 × 200 × 2 = 266,800 iterations ≈ 29.98 steps/s (very close to 30)
-; Note: To change speed, update MOTOR_STEPS_PER_SEC constant and recalculate loop values:
-;   delay = 1 / MOTOR_STEPS_PER_SEC
-;   cycles = delay × 16,000,000
-;   iterations = cycles / 2
-;   Then adjust outer/middle/inner loop multipliers to achieve target iterations
+; Required iterations = 160,000 / 2 = 80,000 iterations
+; Implementation: 200 * 200 * 2 = 80,000 iterations
 ; ============================================
 Motor_StepDelay:
-	; Outer loop: 667 iterations (16-bit counter: 0x029B)
-	; High byte: 0x02, Low byte: 0x9B
-	movlw	0x02		; High byte of 667
+	; Outer loop: 200 iterations (16-bit counter: 0x00C8)
+	; High byte: 0x00, Low byte: 0xC8
+	movlw	0x00		; High byte of 200
 	movwf	pauseOuter, A
-	movlw	0x9B		; Low byte of 667 (155 decimal)
+	movlw	0xC8		; Low byte of 200
 	movwf	pauseOuterL, A
 	
 delay_outer:
@@ -529,21 +523,21 @@ Motor_StepDelaySlow:
 
 ; ============================================
 ; Motor_StepDelayBase: Specific delay for Base motor
-; Target: BASE_STEPS_PER_SEC steps per second (currently 30)
+; Target: BASE_STEPS_PER_SEC steps per second (currently 100)
 ; Config: 16MHz crystal with PLL x4 enabled = 64MHz system clock
 ; Instruction cycle = 4 clocks, so instruction rate = 64MHz / 4 = 16 MIPS
-; For 30 steps/s: delay = 1/30 = 0.03333 seconds
-; Required cycles = 0.03333 * 16,000,000 = 533,333 cycles
+; For 100 steps/s: delay = 1/100 = 0.010 seconds
+; Required cycles = 0.010 * 16,000,000 = 160,000 cycles
 ; Each iteration: ~2 cycles (decf + bnz when taken)
-; Required iterations = 533,333 / 2 = 266,667 iterations
-; Implementation: 667 * 200 * 2 = 266,800 iterations
+; Required iterations = 160,000 / 2 = 80,000 iterations
+; Implementation: 200 * 200 * 2 = 80,000 iterations
 ; ============================================
 Motor_StepDelayBase:
-	; Outer loop: 667 iterations (16-bit counter: 0x029B)
-	; High byte: 0x02, Low byte: 0x9B
-	movlw	0x02		; High byte of 667
+	; Outer loop: 200 iterations (16-bit counter: 0x00C8)
+	; High byte: 0x00, Low byte: 0xC8
+	movlw	0x00		; High byte of 200
 	movwf	pauseOuter, A
-	movlw	0x9B		; Low byte of 667 (155 decimal)
+	movlw	0xC8		; Low byte of 200
 	movwf	pauseOuterL, A
 	
 base_delay_outer:
