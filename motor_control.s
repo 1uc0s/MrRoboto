@@ -504,17 +504,40 @@ Motor_StepDelaySlow:
 	return
 
 ; ============================================
-; Motor_StepDelayBase: Specific delay for Base motor (150 steps/min = 2.5 steps/sec)
-; Delay = 1/2.5 = 0.4 seconds
-; Normal delay is ~0.01s. Need ~40x normal delay.
+; Motor_StepDelayBase: Specific delay for Base motor
+; Target: Half Max Speed (~300 steps/sec)
+; Max speed ~600 steps/sec (from ID 35 series docs)
+; Target delay: 1/300 = 0.00333s = 3.33ms
+; Cycles needed: 3.33ms * 16 MIPS = ~53,333 cycles
+; Loop iterations: 53,333 / 2 ≈ 26,666
+; Calculation: 67 * 200 * 2 = 26,800 iterations
 ; ============================================
 Motor_StepDelayBase:
-	movlw	0x28		; 40 decimal
-	movwf	tempPattern3, A	; Use temp register as counter
+	; Outer loop: 67 iterations
+	movlw	0x43		; 67 decimal
+	movwf	pauseOuter, A
+	
+base_delay_outer:
+	; Middle loop: 200 iterations  
+	movlw	0xC8		; 200 decimal
+	movwf	pauseDelayH, A
+	
+base_delay_middle:
+	; Inner loop: 2 iterations
+	movlw	0x02		; 2 decimal
+	movwf	stepDelayL, A
+	
 base_delay_loop:
-	call	Motor_StepDelay
-	decf	tempPattern3, F, A
-	bnz	base_delay_loop
+	decf	stepDelayL, F, A
+	bnz	base_delay_loop	; Continue inner loop if not zero
+	
+	; Middle loop iteration
+	decf	pauseDelayH, F, A
+	bnz	base_delay_middle	; Continue middle loop if not zero
+	
+	; Outer loop iteration
+	decf	pauseOuter, F, A
+	bnz	base_delay_outer	; Continue outer loop if not zero
 	return
 
 ; ============================================
