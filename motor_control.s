@@ -23,6 +23,7 @@ ELBOW_STEPS	EQU	0x60	; 96 steps = 2 full rotations
 WRIST_STEPS	EQU	0x60	; 96 steps = 2 full rotations
 BIDIR_TEST_STEPS	EQU	0x120	; 288 steps = 3 full rotations (legacy)
 MOTOR_STEPS_PER_SEC	EQU	30	; Motor speed in steps per second (30 = max torque config per datasheet)
+BASE_STEPS_PER_SEC	EQU	30	; Base motor speed in steps per second (30 = match other motors)
 
 ; Export functions for use in other modules
 global	Motor_Init, Motor_BidirectionalTest, Motor_StepForward, Motor_StepBackward, Motor_StepsForward, Motor_StepsBackward, Motor_StepDelay
@@ -263,7 +264,7 @@ Claw_StepBackward:
 
 ; ============================================
 ; Base_StepForward: Execute one step forward on base motor (PORT D bits 4-7)
-; Uses WAVE DRIVE mode (one coil at a time)
+; Uses FULL STEP DRIVE mode (two coils at a time)
 ; Advances to next step in sequence (0->1->2->3->0)
 ; Preserves Claw motor state (bits 0-3) via cached write to PORT D
 ; ============================================
@@ -284,7 +285,7 @@ Base_StepForward:
 
 ; ============================================
 ; Base_StepBackward: Execute one step backward on base motor (PORT D bits 4-7)
-; Uses WAVE DRIVE mode (one coil at a time)
+; Uses FULL STEP DRIVE mode (two coils at a time)
 ; Moves to previous step in sequence (0->3->2->1->0)
 ; Preserves Claw motor state (bits 0-3) via cached write to PORT D
 ; ============================================
@@ -528,17 +529,22 @@ Motor_StepDelaySlow:
 
 ; ============================================
 ; Motor_StepDelayBase: Specific delay for Base motor
-; Target: Half Max Speed (~300 steps/sec)
-; Max speed ~600 steps/sec (from ID 35 series docs)
-; Target delay: 1/300 = 0.00333s = 3.33ms
-; Cycles needed: 3.33ms * 16 MIPS = ~53,333 cycles
-; Loop iterations: 53,333 / 2 ≈ 26,666
-; Calculation: 67 * 200 * 2 = 26,800 iterations
+; Target: BASE_STEPS_PER_SEC steps per second (currently 30)
+; Config: 16MHz crystal with PLL x4 enabled = 64MHz system clock
+; Instruction cycle = 4 clocks, so instruction rate = 64MHz / 4 = 16 MIPS
+; For 30 steps/s: delay = 1/30 = 0.03333 seconds
+; Required cycles = 0.03333 * 16,000,000 = 533,333 cycles
+; Each iteration: ~2 cycles (decf + bnz when taken)
+; Required iterations = 533,333 / 2 = 266,667 iterations
+; Implementation: 667 * 200 * 2 = 266,800 iterations
 ; ============================================
 Motor_StepDelayBase:
-	; Outer loop: 67 iterations
-	movlw	0x43		; 67 decimal
+	; Outer loop: 667 iterations (16-bit counter: 0x029B)
+	; High byte: 0x02, Low byte: 0x9B
+	movlw	0x02		; High byte of 667
 	movwf	pauseOuter, A
+	movlw	0x9B		; Low byte of 667 (155 decimal)
+	movwf	pauseOuterL, A
 	
 base_delay_outer:
 	; Middle loop: 200 iterations  
@@ -558,9 +564,20 @@ base_delay_loop:
 	decf	pauseDelayH, F, A
 	bnz	base_delay_middle	; Continue middle loop if not zero
 	
-	; Outer loop iteration
-	decf	pauseOuter, F, A
-	bnz	base_delay_outer	; Continue outer loop if not zero
+	; Outer loop iteration (16-bit decrement)
+	decf	pauseOuterL, F, A	; Decrement low byte
+	movf	pauseOuterL, W, A	; Load low byte to check for wrap
+	sublw	0xFF		; W - 0xFF, sets Z if low byte is 0xFF (wrapped from 0)
+	bz	base_delay_outer_borrow	; If wrapped (0xFF), borrow from high byte
+	bra	base_delay_outer_check	; Otherwise, check if done
+base_delay_outer_borrow:
+	decf	pauseOuter, F, A	; Decrement high byte when low byte wrapped
+base_delay_outer_check:
+	; Check if both bytes are zero (16-bit counter reached zero)
+	movf	pauseOuter, W, A	; Load high byte
+	bnz	base_delay_outer	; Continue if high byte not zero
+	movf	pauseOuterL, W, A	; Check low byte
+	bnz	base_delay_outer	; Continue if low byte not zero
 	return
 
 ; ============================================
