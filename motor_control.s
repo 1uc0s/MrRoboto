@@ -41,7 +41,7 @@ STEP3	EQU	0x02	; Coil 2 ON, others OFF (RE0=0, RE1=1, RE2=0, RE3=0)
 STEP4	EQU	0x08	; Coil 4 ON, others OFF (RE0=0, RE1=0, RE2=0, RE3=1)
 
 ; Full-step drive constants (two coils at once - higher torque, ~30% more)
-; Base motor uses full-step for better torque
+; All motors now use full-step for better torque
 ; According to Philips documentation: Full-step sequence for 4-phase unipolar
 ; Step 1: Coil 1 + Coil 4, Step 2: Coil 1 + Coil 3, Step 3: Coil 2 + Coil 3, Step 4: Coil 2 + Coil 4
 FULLSTEP1	EQU	0x09	; Coil 1 + Coil 4 ON (RE0=1, RE1=0, RE2=0, RE3=1)
@@ -109,28 +109,28 @@ Motor_Init:
 	movwf	wrist2StepIndex, A	; Wrist roll starts at step 0
 	
 	; Initialize PORT D cache: Claw (low nibble) and Base (high nibble)
-	; Both use wave drive (one coil at a time)
-	movlw	STEP1
+	; Both use full-step drive (two coils at a time) for high torque
+	movlw	FULLSTEP1
 	movwf	portDClawPattern, A
-	movlw	STEP1	; Base uses wave drive (one coil at a time)
+	movlw	FULLSTEP1	; Base uses full-step drive
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A
 	movwf	portDBasePattern, A
 	call	WritePortD
 	
 	; Initialize PORT E cache: Elbow 2 (low) and Elbow 1 (high)
-	movlw	STEP1
+	movlw	FULLSTEP1
 	movwf	portEElbow2Pattern, A
-	movlw	STEP1
+	movlw	FULLSTEP1
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A
 	movwf	portEElbow1Pattern, A
 	call	WritePortE
 	
 	; Initialize PORT H cache: Wrist 1 (low) and Wrist 2 (high)
-	movlw	STEP1
+	movlw	FULLSTEP1
 	movwf	portHWrist1Pattern, A
-	movlw	STEP1
+	movlw	FULLSTEP1
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A
 	movwf	portHWrist2Pattern, A
@@ -236,7 +236,7 @@ Claw_StepForward:
 	
 	; Get step pattern for current index
 	movf	clawStepIndex, W, A
-	call	GetStepValue	; Get step pattern (bits 0-3)
+	call	GetFullStepValue	; Get full step pattern (bits 0-3)
 	movwf	portDClawPattern, A
 	call	WritePortD
 	return
@@ -254,7 +254,7 @@ Claw_StepBackward:
 	
 	; Get step pattern for current index
 	movf	clawStepIndex, W, A
-	call	GetStepValue	; Get step pattern (bits 0-3)
+	call	GetFullStepValue	; Get full step pattern (bits 0-3)
 	movwf	portDClawPattern, A
 	call	WritePortD
 	return
@@ -313,7 +313,7 @@ Shoulder_StepForward:
 	andlw	0x03
 	movwf	elbow2StepIndex, A
 	movf	elbow2StepIndex, W, A
-	call	GetStepValue
+	call	GetFullStepValue
 	movwf	portEElbow2Pattern, A
 	
 	call	WritePortE
@@ -331,7 +331,7 @@ Shoulder_StepBackward:
 	andlw	0x03
 	movwf	elbow2StepIndex, A
 	movf	elbow2StepIndex, W, A
-	call	GetStepValue
+	call	GetFullStepValue
 	movwf	portEElbow2Pattern, A
 	
 	call	WritePortE
@@ -349,7 +349,7 @@ Elbow_StepForward:
 	andlw	0x03
 	movwf	elbow1StepIndex, A
 	movf	elbow1StepIndex, W, A
-	call	GetStepValue
+	call	GetFullStepValue
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A
 	movwf	portEElbow1Pattern, A
@@ -369,7 +369,7 @@ Elbow_StepBackward:
 	andlw	0x03
 	movwf	elbow1StepIndex, A
 	movf	elbow1StepIndex, W, A
-	call	GetStepValue
+	call	GetFullStepValue
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A
 	movwf	portEElbow1Pattern, A
@@ -389,7 +389,7 @@ Wrist_StepForward:
 	andlw	0x03
 	movwf	wrist1StepIndex, A
 	movf	wrist1StepIndex, W, A
-	call	GetStepValue
+	call	GetFullStepValue
 	movwf	portHWrist1Pattern, A
 	
 	; Wrist roll forward (upper nibble, PORT H bits 4-7)
@@ -398,7 +398,7 @@ Wrist_StepForward:
 	andlw	0x03
 	movwf	wrist2StepIndex, A
 	movf	wrist2StepIndex, W, A
-	call	GetStepValue
+	call	GetFullStepValue
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A
 	movwf	portHWrist2Pattern, A
@@ -418,7 +418,7 @@ Wrist_StepBackward:
 	andlw	0x03
 	movwf	wrist1StepIndex, A
 	movf	wrist1StepIndex, W, A
-	call	GetStepValue
+	call	GetFullStepValue
 	movwf	portHWrist1Pattern, A
 	
 	; Wrist roll backward (upper nibble, PORT H bits 4-7)
@@ -427,7 +427,7 @@ Wrist_StepBackward:
 	andlw	0x03
 	movwf	wrist2StepIndex, A
 	movf	wrist2StepIndex, W, A
-	call	GetStepValue
+	call	GetFullStepValue
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A
 	movwf	portHWrist2Pattern, A
