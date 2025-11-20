@@ -7,10 +7,10 @@ psect motor_code,class=CODE,reloc=2
 ; Using L298N to drive individual coils (not as H-bridges)
 ; CLAW MOTOR - PORT D bits 0-3 (RD0=Coil1, RD1=Coil2, RD2=Coil3, RD3=Coil4)
 ; BASE MOTOR - PORT D bits 4-7 (RD4=Coil1, RD5=Coil2, RD6=Coil3, RD7=Coil4)
-; ELBOW 1 - PORT E bits 4-7 (RE4=Coil1, RE5=Coil2, RE6=Coil3, RE7=Coil4)
-; ELBOW 2 - PORT E bits 0-3 (RE0=Coil1, RE1=Coil2, RE2=Coil3, RE3=Coil4) - moves same direction (test)
-; WRIST 1 - PORT H bits 0-3 (RH0=Coil1, RH1=Coil2, RH2=Coil3, RH3=Coil4)
-; WRIST 2 - PORT H bits 4-7 (RH4=Coil1, RH5=Coil2, RH6=Coil3, RH7=Coil4) - moves same direction (test)
+; SHOULDER MOTOR - PORT E bits 0-3 (RE0=Coil1, RE1=Coil2, RE2=Coil3, RE3=Coil4)
+; ELBOW MOTOR - PORT E bits 4-7 (RE4=Coil1, RE5=Coil2, RE6=Coil3, RE7=Coil4)
+; WRIST PITCH - PORT H bits 0-3 (RH0=Coil1, RH1=Coil2, RH2=Coil3, RH3=Coil4)
+; WRIST ROLL - PORT H bits 4-7 (RH4=Coil1, RH5=Coil2, RH6=Coil3, RH7=Coil4)
 ; ENA/ENB: Connected to +5V (always enabled)
 ; ============================================
 
@@ -18,6 +18,7 @@ psect motor_code,class=CODE,reloc=2
 ; Motor has 7.5° step angle = 48 steps per full rotation (360°)
 BASE_STEPS	EQU	0x60	; 96 steps = 2 full rotations (base has 360° freedom)
 CLAW_STEPS	EQU	0x60	; 96 steps = 2 full rotations
+SHOULDER_STEPS	EQU	0x60	; 96 steps = 2 full rotations
 ELBOW_STEPS	EQU	0x60	; 96 steps = 2 full rotations
 WRIST_STEPS	EQU	0x60	; 96 steps = 2 full rotations
 BIDIR_TEST_STEPS	EQU	0x120	; 288 steps = 3 full rotations (legacy)
@@ -27,6 +28,7 @@ global	Motor_Init, Motor_BidirectionalTest, Motor_StepForward, Motor_StepBackwar
 global	Motor_StepDelaySlow, Motor_SequentialDemo, Motor_Pause
 global	Claw_StepForward, Claw_StepBackward, Base_StepForward, Base_StepBackward
 global	Base_StepsForward, Base_StepsBackward, Claw_StepsForward, Claw_StepsBackward
+global	Shoulder_StepForward, Shoulder_StepBackward, Shoulder_StepsForward, Shoulder_StepsBackward
 global	Elbow_StepForward, Elbow_StepBackward, Elbow_StepsForward, Elbow_StepsBackward
 global	Wrist_StepForward, Wrist_StepBackward, Wrist_StepsForward, Wrist_StepsBackward
 
@@ -50,10 +52,10 @@ FULLSTEP4	EQU	0x0A	; Coil 2 + Coil 4 ON (RE0=0, RE1=1, RE2=0, RE3=1)
 ; Memory allocation for motor control
 clawStepIndex	EQU	0x0A	; Claw motor current step index (0-3)
 baseStepIndex	EQU	0x0B	; Base motor current step index (0-3)
-elbow1StepIndex	EQU	0x12	; Elbow 1 motor current step index (0-3)
-elbow2StepIndex	EQU	0x13	; Elbow 2 motor current step index (0-3)
-wrist1StepIndex	EQU	0x14	; Wrist 1 motor current step index (0-3)
-wrist2StepIndex	EQU	0x15	; Wrist 2 motor current step index (0-3)
+elbow1StepIndex	EQU	0x12	; Elbow motor current step index (0-3) - PORT E bits 4-7 (upper nibble)
+elbow2StepIndex	EQU	0x13	; Shoulder motor current step index (0-3) - PORT E bits 0-3 (lower nibble)
+wrist1StepIndex	EQU	0x14	; Wrist pitch motor current step index (0-3) - PORT H bits 0-3 (lower nibble)
+wrist2StepIndex	EQU	0x15	; Wrist roll motor current step index (0-3) - PORT H bits 4-7 (upper nibble)
 stepCount	EQU	0x0C	; Counter for number of steps to execute
 stepDelayH	EQU	0x0D	; Delay counter high byte for step timing
 stepDelayL	EQU	0x0E	; Delay counter low byte for step timing
@@ -101,10 +103,10 @@ Motor_Init:
 	movlw	0x00
 	movwf	clawStepIndex, A	; Claw starts at step 0
 	movwf	baseStepIndex, A	; Base starts at step 0
-	movwf	elbow1StepIndex, A	; Elbow 1 starts at step 0
-	movwf	elbow2StepIndex, A	; Elbow 2 starts at step 0
-	movwf	wrist1StepIndex, A	; Wrist 1 starts at step 0
-	movwf	wrist2StepIndex, A	; Wrist 2 starts at step 0
+	movwf	elbow1StepIndex, A	; Elbow starts at step 0
+	movwf	elbow2StepIndex, A	; Shoulder starts at step 0
+	movwf	wrist1StepIndex, A	; Wrist pitch starts at step 0
+	movwf	wrist2StepIndex, A	; Wrist roll starts at step 0
 	
 	; Initialize PORT D cache: Claw (low nibble) and Base (high nibble)
 	; Both use wave drive (one coil at a time)
@@ -269,9 +271,9 @@ Base_StepForward:
 	andlw	0x03		; Wrap around (0-3)
 	movwf	baseStepIndex, A	; Save new step index
 	
-	; Get wave drive pattern for current index (one coil at a time)
+	; Get full step pattern for current index (two coils at a time) for higher torque
 	movf	baseStepIndex, W, A
-	call	GetStepValue	; Get wave drive pattern (bits 0-3)
+	call	GetFullStepValue	; Get full step pattern (bits 0-3)
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A	; Shift into upper nibble
 	movwf	portDBasePattern, A
@@ -290,9 +292,9 @@ Base_StepBackward:
 	andlw	0x03		; Wrap around (0-3)
 	movwf	baseStepIndex, A	; Save new step index
 	
-	; Get wave drive pattern for current index (one coil at a time)
+	; Get full step pattern for current index (two coils at a time) for higher torque
 	movf	baseStepIndex, W, A
-	call	GetStepValue	; Get wave drive pattern (bits 0-3)
+	call	GetFullStepValue	; Get full step pattern (bits 0-3)
 	movwf	tempPattern, A
 	swapf	tempPattern, W, A	; Shift into upper nibble
 	movwf	portDBasePattern, A
@@ -300,11 +302,48 @@ Base_StepBackward:
 	return
 
 ; ============================================
-; Elbow_StepForward: Step both Elbow motors forward (same direction - test)
-; Uses cached patterns to update PORTE simultaneously
+; Shoulder_StepForward: Step Shoulder motor forward
+; Uses cached patterns to update PORTE
+; Note: elbow2StepIndex = Shoulder (PORT E bits 0-3)
+; ============================================
+Shoulder_StepForward:
+	; Shoulder forward (lower nibble, PORT E bits 0-3)
+	movf	elbow2StepIndex, W, A
+	addlw	0x01
+	andlw	0x03
+	movwf	elbow2StepIndex, A
+	movf	elbow2StepIndex, W, A
+	call	GetStepValue
+	movwf	portEElbow2Pattern, A
+	
+	call	WritePortE
+	return
+
+; ============================================
+; Shoulder_StepBackward: Step Shoulder motor backward
+; Uses cached patterns to update PORTE
+; Note: elbow2StepIndex = Shoulder (PORT E bits 0-3)
+; ============================================
+Shoulder_StepBackward:
+	; Shoulder backward (lower nibble, PORT E bits 0-3)
+	movf	elbow2StepIndex, W, A
+	addlw	0x03
+	andlw	0x03
+	movwf	elbow2StepIndex, A
+	movf	elbow2StepIndex, W, A
+	call	GetStepValue
+	movwf	portEElbow2Pattern, A
+	
+	call	WritePortE
+	return
+
+; ============================================
+; Elbow_StepForward: Step Elbow motor forward
+; Uses cached patterns to update PORTE
+; Note: elbow1StepIndex = Elbow (PORT E bits 4-7)
 ; ============================================
 Elbow_StepForward:
-	; Elbow 1 forward (upper nibble)
+	; Elbow forward (upper nibble, PORT E bits 4-7)
 	movf	elbow1StepIndex, W, A
 	addlw	0x01
 	andlw	0x03
@@ -315,24 +354,16 @@ Elbow_StepForward:
 	swapf	tempPattern, W, A
 	movwf	portEElbow1Pattern, A
 	
-	; Elbow 2 forward (lower nibble) - same direction
-	movf	elbow2StepIndex, W, A
-	addlw	0x01
-	andlw	0x03
-	movwf	elbow2StepIndex, A
-	movf	elbow2StepIndex, W, A
-	call	GetStepValue
-	movwf	portEElbow2Pattern, A
-	
 	call	WritePortE
 	return
 
 ; ============================================
-; Elbow_StepBackward: Step both Elbow motors backward (same direction - test)
-; Uses cached patterns to update PORTE simultaneously
+; Elbow_StepBackward: Step Elbow motor backward
+; Uses cached patterns to update PORTE
+; Note: elbow1StepIndex = Elbow (PORT E bits 4-7)
 ; ============================================
 Elbow_StepBackward:
-	; Elbow 1 backward (upper nibble)
+	; Elbow backward (upper nibble, PORT E bits 4-7)
 	movf	elbow1StepIndex, W, A
 	addlw	0x03
 	andlw	0x03
@@ -343,24 +374,16 @@ Elbow_StepBackward:
 	swapf	tempPattern, W, A
 	movwf	portEElbow1Pattern, A
 	
-	; Elbow 2 backward (lower nibble) - same direction
-	movf	elbow2StepIndex, W, A
-	addlw	0x03
-	andlw	0x03
-	movwf	elbow2StepIndex, A
-	movf	elbow2StepIndex, W, A
-	call	GetStepValue
-	movwf	portEElbow2Pattern, A
-	
 	call	WritePortE
 	return
 
 ; ============================================
-; Wrist_StepForward: Step both Wrist motors forward (same direction - test)
+; Wrist_StepForward: Step Wrist pitch and roll motors forward simultaneously
 ; Uses cached patterns to update PORTH simultaneously
+; Note: wrist1StepIndex = Wrist pitch (PORT H bits 0-3), wrist2StepIndex = Wrist roll (PORT H bits 4-7)
 ; ============================================
 Wrist_StepForward:
-	; Wrist 1 forward (lower nibble)
+	; Wrist pitch forward (lower nibble, PORT H bits 0-3)
 	movf	wrist1StepIndex, W, A
 	addlw	0x01
 	andlw	0x03
@@ -369,7 +392,7 @@ Wrist_StepForward:
 	call	GetStepValue
 	movwf	portHWrist1Pattern, A
 	
-	; Wrist 2 forward (upper nibble) - same direction
+	; Wrist roll forward (upper nibble, PORT H bits 4-7)
 	movf	wrist2StepIndex, W, A
 	addlw	0x01
 	andlw	0x03
@@ -384,11 +407,12 @@ Wrist_StepForward:
 	return
 
 ; ============================================
-; Wrist_StepBackward: Step both Wrist motors backward (same direction - test)
+; Wrist_StepBackward: Step Wrist pitch and roll motors backward simultaneously
 ; Uses cached patterns to update PORTH simultaneously
+; Note: wrist1StepIndex = Wrist pitch (PORT H bits 0-3), wrist2StepIndex = Wrist roll (PORT H bits 4-7)
 ; ============================================
 Wrist_StepBackward:
-	; Wrist 1 backward (lower nibble)
+	; Wrist pitch backward (lower nibble, PORT H bits 0-3)
 	movf	wrist1StepIndex, W, A
 	addlw	0x03
 	andlw	0x03
@@ -397,7 +421,7 @@ Wrist_StepBackward:
 	call	GetStepValue
 	movwf	portHWrist1Pattern, A
 	
-	; Wrist 2 backward (upper nibble) - same direction
+	; Wrist roll backward (upper nibble, PORT H bits 4-7)
 	movf	wrist2StepIndex, W, A
 	addlw	0x03
 	andlw	0x03
@@ -480,6 +504,20 @@ Motor_StepDelaySlow:
 	return
 
 ; ============================================
+; Motor_StepDelayBase: Specific delay for Base motor (150 steps/min = 2.5 steps/sec)
+; Delay = 1/2.5 = 0.4 seconds
+; Normal delay is ~0.01s. Need ~40x normal delay.
+; ============================================
+Motor_StepDelayBase:
+	movlw	0x28		; 40 decimal
+	movwf	tempPattern3, A	; Use temp register as counter
+base_delay_loop:
+	call	Motor_StepDelay
+	decf	tempPattern3, F, A
+	bnz	base_delay_loop
+	return
+
+; ============================================
 ; Motor_StepsForward: Execute multiple steps forward on both motors
 ; Input: W = number of steps to execute
 ; Both motors step in synchronized interleaved fashion
@@ -512,14 +550,13 @@ backward_loop:
 ; ============================================
 ; Base_StepsForward: Execute multiple steps forward on Base motor
 ; Input: W = number of steps to execute
-; Uses slower delay to help motor settle and reduce oscillation
 ; ============================================
 Base_StepsForward:
 	movwf	stepCount, A	; Save step count
 	
 base_forward_loop:
-	call	Base_StepForward	; Step Base motor forward (full-step mode)
-	call	Motor_StepDelaySlow	; Slower delay after step (3x slower)
+	call	Base_StepForward	; Step Base motor forward (full step)
+	call	Motor_StepDelayBase	; Slow delay (150 steps/min)
 	decf	stepCount, F, A
 	bnz	base_forward_loop	; Continue if not zero
 	return
@@ -527,14 +564,13 @@ base_forward_loop:
 ; ============================================
 ; Base_StepsBackward: Execute multiple steps backward on Base motor
 ; Input: W = number of steps to execute
-; Uses slower delay to help motor settle and reduce oscillation
 ; ============================================
 Base_StepsBackward:
 	movwf	stepCount, A	; Save step count
 	
 base_backward_loop:
-	call	Base_StepBackward	; Step Base motor backward (full-step mode)
-	call	Motor_StepDelaySlow	; Slower delay after step (3x slower)
+	call	Base_StepBackward	; Step Base motor backward (full step)
+	call	Motor_StepDelayBase	; Slow delay (150 steps/min)
 	decf	stepCount, F, A
 	bnz	base_backward_loop	; Continue if not zero
 	return
@@ -568,56 +604,84 @@ claw_backward_loop:
 	return
 
 ; ============================================
-; Elbow_StepsForward: Execute multiple steps forward on Elbow motors
+; Shoulder_StepsForward: Execute multiple steps forward on Shoulder motor
+; Input: W = number of steps to execute
+; ============================================
+Shoulder_StepsForward:
+	movwf	stepCount, A	; Save step count
+	
+shoulder_forward_loop:
+	call	Shoulder_StepForward	; Step Shoulder motor forward
+	call	Motor_StepDelay		; Delay after step
+	decf	stepCount, F, A
+	bnz	shoulder_forward_loop	; Continue if not zero
+	return
+
+; ============================================
+; Shoulder_StepsBackward: Execute multiple steps backward on Shoulder motor
+; Input: W = number of steps to execute
+; ============================================
+Shoulder_StepsBackward:
+	movwf	stepCount, A	; Save step count
+	
+shoulder_backward_loop:
+	call	Shoulder_StepBackward	; Step Shoulder motor backward
+	call	Motor_StepDelay		; Delay after step
+	decf	stepCount, F, A
+	bnz	shoulder_backward_loop	; Continue if not zero
+	return
+
+; ============================================
+; Elbow_StepsForward: Execute multiple steps forward on Elbow motor
 ; Input: W = number of steps to execute
 ; ============================================
 Elbow_StepsForward:
 	movwf	stepCount, A	; Save step count
 	
 elbow_forward_loop:
-	call	Elbow_StepForward	; Step Elbow motors forward
+	call	Elbow_StepForward	; Step Elbow motor forward
 	call	Motor_StepDelay		; Delay after step
 	decf	stepCount, F, A
 	bnz	elbow_forward_loop	; Continue if not zero
 	return
 
 ; ============================================
-; Elbow_StepsBackward: Execute multiple steps backward on Elbow motors
+; Elbow_StepsBackward: Execute multiple steps backward on Elbow motor
 ; Input: W = number of steps to execute
 ; ============================================
 Elbow_StepsBackward:
 	movwf	stepCount, A	; Save step count
 	
 elbow_backward_loop:
-	call	Elbow_StepBackward	; Step Elbow motors backward
+	call	Elbow_StepBackward	; Step Elbow motor backward
 	call	Motor_StepDelay		; Delay after step
 	decf	stepCount, F, A
 	bnz	elbow_backward_loop	; Continue if not zero
 	return
 
 ; ============================================
-; Wrist_StepsForward: Execute multiple steps forward on Wrist motors
+; Wrist_StepsForward: Execute multiple steps forward on Wrist pitch and roll motors
 ; Input: W = number of steps to execute
 ; ============================================
 Wrist_StepsForward:
 	movwf	stepCount, A	; Save step count
 	
 wrist_forward_loop:
-	call	Wrist_StepForward	; Step Wrist motors forward
+	call	Wrist_StepForward	; Step Wrist pitch and roll motors forward
 	call	Motor_StepDelay		; Delay after step
 	decf	stepCount, F, A
 	bnz	wrist_forward_loop	; Continue if not zero
 	return
 
 ; ============================================
-; Wrist_StepsBackward: Execute multiple steps backward on Wrist motors
+; Wrist_StepsBackward: Execute multiple steps backward on Wrist pitch and roll motors
 ; Input: W = number of steps to execute
 ; ============================================
 Wrist_StepsBackward:
 	movwf	stepCount, A	; Save step count
 	
 wrist_backward_loop:
-	call	Wrist_StepBackward	; Step Wrist motors backward
+	call	Wrist_StepBackward	; Step Wrist pitch and roll motors backward
 	call	Motor_StepDelay		; Delay after step
 	decf	stepCount, F, A
 	bnz	wrist_backward_loop	; Continue if not zero
@@ -670,9 +734,9 @@ Motor_BidirectionalTest:
 	return
 
 ; ============================================
-; Motor_SequentialDemo: Sequential demo of all 4 degrees of freedom
-; Cycles through Base, Claw, Elbow, and Wrist with forward/backward motion
-; Each DOF uses its configurable step count constant
+; Motor_SequentialDemo: Sequential demo of motor groups
+; Cycles through Base, Claw, Shoulder, Elbow, and Wrist pitch+roll (together)
+; Each motor group uses its configurable step count constant
 ; Repeats continuously
 ; ============================================
 Motor_SequentialDemo:
@@ -696,6 +760,16 @@ Motor_SequentialDemo:
 	call	Claw_StepsBackward
 	call	Motor_Pause	; Pause before next DOF
 	
+	; Shoulder: Forward
+	movlw	SHOULDER_STEPS	; Load Shoulder step count
+	call	Shoulder_StepsForward
+	call	Motor_Pause	; Pause between direction changes
+	
+	; Shoulder: Backward
+	movlw	SHOULDER_STEPS	; Load Shoulder step count
+	call	Shoulder_StepsBackward
+	call	Motor_Pause	; Pause before next DOF
+
 	; Elbow: Forward
 	movlw	ELBOW_STEPS	; Load Elbow step count
 	call	Elbow_StepsForward

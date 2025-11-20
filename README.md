@@ -9,11 +9,12 @@ This project is based on the MicroprocessorsLab repository and extends it to con
 ## Hardware Components
 
 ### Robot Arm Architecture
-The robot arm consists of 6 stepper motors organized into 4 independently controllable motor units:
-- **Claw Motor** (PORT E): Single motor for gripper control
-- **Base Motor** (PORT F): Single motor for base rotation
-- **Wrist Motors** (PORT G): Pair of motors moving together for wrist articulation
-- **Elbow Motors** (PORT H): Pair of motors moving together for elbow articulation
+The robot arm consists of 6 stepper motors:
+- **Base Motor**: Single motor for base rotation
+- **Shoulder Motor**: Single motor for shoulder articulation
+- **Elbow Motor**: Single motor for elbow articulation
+- **Wrist Motors**: Two motors for wrist articulation (pitch and roll)
+- **Claw Motor**: Single motor for claw actuation
 
 ### Stepper Motor
 - **Model:** 9904 112 35014 (from 9904 112 35 series)
@@ -37,7 +38,7 @@ The robot arm consists of 6 stepper motors organized into 4 independently contro
 
 ### Motor Driver ICs
 - **Model:** ULN2003A Darlington Transistor Array
-- **Quantity:** 4 units (one per motor)
+- **Quantity:** 6 units (one per motor)
 - **Current Rating:** 500mA per channel
 - **Features:** Built-in flyback diodes for inductive loads
 - **Documentation:** [ULN2003A Datasheet](docs/Uln2003a%20Darlington%20Transistor%20Array.md)
@@ -60,8 +61,8 @@ This guide includes:
 - ⚡ Power supply requirements and safety guidelines
 
 **Quick Start:**
-1. Connect 4× ULN2003A ICs to breadboard
-2. Wire EasyPIC GPIO pins (PORTA-PORTD) to ULN2003A inputs
+1. Connect 6× ULN2003A ICs to breadboard
+2. Wire EasyPIC GPIO pins to ULN2003A inputs
 3. Connect external 8-12V supply to ULN2003A COM pins
 4. Connect motors to ULN2003A outputs
 5. Ensure common ground between all components
@@ -70,7 +71,7 @@ This guide includes:
 ## Documentation
 
 ### Hardware Documentation
-- **[ULN2003A Hardware Setup Guide](docs/ULN2003A_Hardware_Setup.md)** - Complete integration guide for 4-motor setup
+- **[ULN2003A Hardware Setup Guide](docs/ULN2003A_Hardware_Setup.md)** - Complete integration guide for motor setup
 - **[ULN2003A Datasheet](docs/Uln2003a%20Darlington%20Transistor%20Array.md)** - Driver IC specifications
 - **[EasyPIC PRO v7 Manual](docs/easypic-pro-v7-manual-v101.md)** - Development board manual
 - **[330510 Motor Specifications](docs/330510%20Motor.md)** - Stepper motor datasheet (9904 112 series)
@@ -95,16 +96,18 @@ The initial codebase is based on the master branch of MicroprocessorsLab. The ma
 
 **✅ Implemented:**
 - Dual motor simultaneous control (Claw + Base motors)
+- Independent Shoulder motor control (RE0-3)
+- Independent Elbow motor control (RE4-7)
+- Paired Wrist motor control (Pitch + Roll)
 - Interleaved stepping for smooth coordinated motion
 - Configurable step count via `BIDIR_TEST_STEPS` constant
 - Independent step tracking for each motor unit
 - Bidirectional test routine
+- Sequential demo of all joints
 
 **🔄 Future Expansion:**
-- Wrist motor pair control (PORT G)
-- Elbow motor pair control (PORT H)
-- Individual motor control functions
 - Complex motion sequences
+- Inverse kinematics
 
 ### Motor Control Architecture
 
@@ -126,12 +129,12 @@ The motor control system (`motor_control.s`) follows a scalable, debuggable patt
 
 ### Adding New Motor Units
 
-To add Wrist or Elbow motor control, follow the existing pattern in `motor_control.s`:
+To add Shoulder, Elbow, or Wrist motor control, follow the existing pattern in `motor_control.s`:
 
-1. Add step index variable: `wristStepIndex EQU 0x12`
-2. Create step functions: `Wrist_StepForward`, `Wrist_StepBackward`
+1. Add step index variable: `shoulderStepIndex EQU 0x12`
+2. Create step functions: `Shoulder_StepForward`, `Shoulder_StepBackward`
 3. Update `Motor_Init` to initialize the new motor
-4. Output to appropriate PORT (G for Wrist, H for Elbow)
+4. Output to appropriate PORT
 5. Create/update interleaved functions as needed
 
 This pattern keeps the code simple, maintainable, and easy to debug.

@@ -1,7 +1,7 @@
 # ULN2003A Hardware Setup Guide
-## Four Stepper Motor Control with EasyPIC PRO v7
+## Six Stepper Motor Control with EasyPIC PRO v7
 
-This document provides complete hardware integration details for controlling four 9904-112-35014 stepper motors using ULN2003A Darlington transistor arrays with the EasyPIC PRO v7 development board.
+This document provides complete hardware integration details for controlling six 9904-112-35014 stepper motors using ULN2003A Darlington transistor arrays with the EasyPIC PRO v7 development board.
 
 ---
 
@@ -25,7 +25,7 @@ This document provides complete hardware integration details for controlling fou
 - **Package:** DIP-16, SOIC-16, TSSOP-16
 
 ### ✅ EasyPIC PRO v7 Capabilities
-- **GPIO availability:** 69 I/O pins (16 needed for 4 motors) ✅
+- **GPIO availability:** 69 I/O pins (24 needed for 6 motors) ✅
 - **Logic levels:** 3.3V or 5V selectable ✅
 - **On-board power:** 600mA max (insufficient for motors) ⚠️
 
@@ -35,20 +35,20 @@ This document provides complete hardware integration details for controlling fou
 
 ### Critical Power Considerations
 
-**Total Motor Current:** 4 motors × 4 coils × 240mA = **3.84A peak** (when all coils energized)
+**Total Motor Current:** 6 motors × 4 coils × 240mA = **5.76A peak** (when all coils energized)
 
-**Typical Operation:** 4 motors × 2 coils × 240mA = **1.92A** (half-step mode)
+**Typical Operation:** 6 motors × 2 coils × 240mA = **2.88A** (half-step mode)
 
 ### Required External Power Supply
 
 **Specifications:**
 - **Voltage:** 8-12V DC (motors rated for 8.5V nominal)
-- **Current:** Minimum 1.5A, **recommended 2-3A**
+- **Current:** Minimum 2.5A, **recommended 3-4A**
 - **Type:** Regulated DC power supply or 12V wall adapter
 
 **Why External Power is Required:**
 - EasyPIC PRO v7 maximum output: 600mA (adapter) or 500mA (USB)
-- Motors require up to 1.92A during operation
+- Motors require up to 2.88A during operation
 - On-board supply cannot handle motor load
 
 **Power Distribution:**
@@ -64,15 +64,15 @@ Common GND between EasyPIC and External Supply (REQUIRED)
 
 | Quantity | Component | Specification | Purpose | Estimated Cost |
 |----------|-----------|---------------|---------|----------------|
-| 4 | ULN2003A IC | DIP-16 or SOIC-16 | Stepper driver | $2-5 each (~$8-20) |
-| 4 | 16-pin IC socket | DIP-16 (optional) | Easy replacement | $0.50 each (~$2) |
-| 4 | 9904-112-35014 | Stepper motor | Already owned | - |
-| 1 | Power supply | 8-12V, 2-3A DC | Motor power | $10-20 |
+| 6 | ULN2003A IC | DIP-16 or SOIC-16 | Stepper driver | $2-5 each (~$12-30) |
+| 6 | 16-pin IC socket | DIP-16 (optional) | Easy replacement | $0.50 each (~$3) |
+| 6 | 9904-112-35014 | Stepper motor | Already owned | - |
+| 1 | Power supply | 8-12V, 3-4A DC | Motor power | $15-25 |
 | 1 | Breadboard | Large (830 tie points) | Prototyping | $5-10 |
 | 1 | Wire jumper kit | Male-male, male-female | Connections | $5-10 |
-| 16 | 10kΩ resistors | Optional pull-downs | Signal stability | $1 |
+| 24 | 10kΩ resistors | Optional pull-downs | Signal stability | $1 |
 | - | Header pins | - | Motor connections | $2 |
-| **Total** | - | - | - | **$35-70** |
+| **Total** | - | - | - | **$45-85** |
 
 ---
 
@@ -132,6 +132,22 @@ RD2 → ULN2003A #4 Pin 3 (3B) → Motor 4 Coil C
 RD3 → ULN2003A #4 Pin 4 (4B) → Motor 4 Coil D
 ```
 
+**Motor 5 - PORTE (RE0-RE3)**
+```
+RE0 → ULN2003A #5 Pin 1 (1B) → Motor 5 Coil A
+RE1 → ULN2003A #5 Pin 2 (2B) → Motor 5 Coil B
+RE2 → ULN2003A #5 Pin 3 (3B) → Motor 5 Coil C
+RE3 → ULN2003A #5 Pin 4 (4B) → Motor 5 Coil D
+```
+
+**Motor 6 - PORTF (RF0-RF3)**
+```
+RF0 → ULN2003A #6 Pin 1 (1B) → Motor 6 Coil A
+RF1 → ULN2003A #6 Pin 2 (2B) → Motor 6 Coil B
+RF2 → ULN2003A #6 Pin 3 (3B) → Motor 6 Coil C
+RF3 → ULN2003A #6 Pin 4 (4B) → Motor 6 Coil D
+```
+
 ---
 
 ## Wiring Diagram
@@ -161,7 +177,7 @@ EasyPIC PRO v7                  ULN2003A #1              Motor 1
                                             |
                                             +----------> All COM pins (pin 9)
 
-(Repeat for ULN2003A #2, #3, #4 with respective ports)
+(Repeat for ULN2003A #2, #3, #4, #5, #6 with respective ports)
 ```
 
 ### Physical Connection Steps
@@ -182,6 +198,8 @@ EasyPIC PRO v7                  ULN2003A #1              Motor 1
    - Connect RB0-RB3 to ULN2003A #2 pins 1-4
    - Connect RC0-RC3 to ULN2003A #3 pins 1-4
    - Connect RD0-RD3 to ULN2003A #4 pins 1-4
+   - Connect RE0-RE3 to ULN2003A #5 pins 1-4
+   - Connect RF0-RF3 to ULN2003A #6 pins 1-4
 
 4. **Connect Motors**
    - Identify motor coils (use ohmmeter: ~47Ω between coil pairs)
@@ -277,6 +295,8 @@ MOTOR1_STEP     EQU 0x20    ; Current step index for motor 1
 MOTOR2_STEP     EQU 0x21
 MOTOR3_STEP     EQU 0x22
 MOTOR4_STEP     EQU 0x23
+MOTOR5_STEP     EQU 0x24
+MOTOR6_STEP     EQU 0x25
 
 ; Initialize ports as outputs
 INIT_MOTORS:
@@ -284,16 +304,22 @@ INIT_MOTORS:
     CLRF    TRISB       ; PORTB all outputs (Motor 2)
     CLRF    TRISC       ; PORTC all outputs (Motor 3)
     CLRF    TRISD       ; PORTD all outputs (Motor 4)
+    CLRF    TRISE       ; PORTE all outputs (Motor 5)
+    CLRF    TRISF       ; PORTF all outputs (Motor 6)
     
     CLRF    PORTA       ; All motors off
     CLRF    PORTB
     CLRF    PORTC
     CLRF    PORTD
+    CLRF    PORTE
+    CLRF    PORTF
     
     CLRF    MOTOR1_STEP ; Reset step counters
     CLRF    MOTOR2_STEP
     CLRF    MOTOR3_STEP
     CLRF    MOTOR4_STEP
+    CLRF    MOTOR5_STEP
+    CLRF    MOTOR6_STEP
     RETURN
 
 ; Step Motor 1 forward one step
@@ -347,6 +373,8 @@ TMR0_ISR:
     CALL    STEP_MOTOR2_FWD
     CALL    STEP_MOTOR3_FWD
     CALL    STEP_MOTOR4_FWD
+    CALL    STEP_MOTOR5_FWD
+    CALL    STEP_MOTOR6_FWD
     
     BCF     INTCON, TMR0IF  ; Clear flag
     RETFIE  FAST
@@ -365,6 +393,8 @@ CLRF    PORTA
 CLRF    PORTB
 CLRF    PORTC
 CLRF    PORTD
+CLRF    PORTE
+CLRF    PORTF
 ; Measure: ULN2003A outputs should be at supply voltage (~8-12V)
 ```
 
@@ -505,7 +535,7 @@ MAIN_LOOP:
 ---
 
 **Document prepared for:** MrRoboto Project  
-**Target Hardware:** EasyPIC PRO v7 + 4× 9904-112-35014 Stepper Motors  
-**Driver:** 4× ULN2003A Darlington Arrays  
-**Power:** External 8-12V, 2-3A supply
+**Target Hardware:** EasyPIC PRO v7 + 6× 9904-112-35014 Stepper Motors  
+**Driver:** 6× ULN2003A Darlington Arrays  
+**Power:** External 8-12V, 3-4A supply
 
