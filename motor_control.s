@@ -22,6 +22,7 @@ SHOULDER_STEPS	EQU	0x60	; 96 steps = 2 full rotations
 ELBOW_STEPS	EQU	0x60	; 96 steps = 2 full rotations
 WRIST_STEPS	EQU	0x60	; 96 steps = 2 full rotations
 BIDIR_TEST_STEPS	EQU	0x120	; 288 steps = 3 full rotations (legacy)
+MOTOR_STEPS_PER_SEC	EQU	30	; Motor speed in steps per second (30 = max torque config per datasheet)
 
 ; Export functions for use in other modules
 global	Motor_Init, Motor_BidirectionalTest, Motor_StepForward, Motor_StepBackward, Motor_StepsForward, Motor_StepsBackward, Motor_StepDelay
@@ -61,7 +62,8 @@ stepDelayH	EQU	0x0D	; Delay counter high byte for step timing
 stepDelayL	EQU	0x0E	; Delay counter low byte for step timing
 pauseDelayH	EQU	0x0F	; Pause delay counter high byte
 pauseDelayL	EQU	0x10	; Pause delay counter low byte
-pauseOuter	EQU	0x11	; Outer loop counter for pause
+pauseOuter	EQU	0x11	; Outer loop counter for pause (high byte for 16-bit counter)
+pauseOuterL	EQU	0x1F	; Outer loop counter low byte (for 16-bit counter in Motor_StepDelay)
 tempPattern	EQU	0x16	; Temporary scratch register for pattern manipulation
 tempPattern2	EQU	0x17	; Additional scratch register
 tempPattern3	EQU	0x18	; Additional scratch register
@@ -454,19 +456,29 @@ Both_StepBackward:
 	return
 
 ; ============================================
-; Motor_StepDelay: Delay between steps (~0.01 second = 100 steps/sec)
+; Motor_StepDelay: Delay between steps (configurable via MOTOR_STEPS_PER_SEC)
+; Target: MOTOR_STEPS_PER_SEC steps per second (default: 30 steps/s = max torque config)
+; Delay per step = 1 / MOTOR_STEPS_PER_SEC seconds
 ; Config: 16MHz crystal with PLL x4 enabled = 64MHz system clock
 ; Instruction cycle = 4 clocks, so instruction rate = 64MHz / 4 = 16 MIPS
-; For ~0.01 second delay, need ~160,000 instruction cycles
-; Using triple nested loop with simple 8-bit counters for reliability
-; Each inner loop iteration: ~2 cycles (decf + bnz when taken)
-; Need: 160,000 / 2 ≈ 80,000 iterations
-; Calculation: 200 × 200 × 2 ≈ 80,000 iterations ≈ 160,000 cycles ≈ 0.01 seconds
+; For 30 steps/s: delay = 1/30 = 0.03333 seconds
+; Required cycles = 0.03333 × 16,000,000 = 533,333 cycles
+; Each iteration: ~2 cycles (decf + bnz when taken)
+; Required iterations = 533,333 / 2 = 266,667 iterations
+; Implementation: 667 × 200 × 2 = 266,800 iterations ≈ 29.98 steps/s (very close to 30)
+; Note: To change speed, update MOTOR_STEPS_PER_SEC constant and recalculate loop values:
+;   delay = 1 / MOTOR_STEPS_PER_SEC
+;   cycles = delay × 16,000,000
+;   iterations = cycles / 2
+;   Then adjust outer/middle/inner loop multipliers to achieve target iterations
 ; ============================================
 Motor_StepDelay:
-	; Outer loop: 200 iterations
-	movlw	0xC8		; 200 decimal
+	; Outer loop: 667 iterations (16-bit counter: 0x029B)
+	; High byte: 0x02, Low byte: 0x9B
+	movlw	0x02		; High byte of 667
 	movwf	pauseOuter, A
+	movlw	0x9B		; Low byte of 667 (155 decimal)
+	movwf	pauseOuterL, A
 	
 delay_outer:
 	; Middle loop: 200 iterations  
@@ -475,7 +487,7 @@ delay_outer:
 	
 delay_middle:
 	; Inner loop: 2 iterations
-	; This gives: 200 × 200 × 2 ≈ 80,000 iterations ≈ 160,000 cycles ≈ 0.01 seconds
+	; This gives: 667 × 200 × 2 = 266,800 iterations ≈ 533,600 cycles ≈ 0.03335 seconds ≈ 29.98 steps/s
 	movlw	0x02		; 2 decimal
 	movwf	stepDelayL, A
 	
@@ -487,9 +499,20 @@ delay_loop:
 	decf	pauseDelayH, F, A
 	bnz	delay_middle	; Continue middle loop if not zero
 	
-	; Outer loop iteration
-	decf	pauseOuter, F, A
-	bnz	delay_outer	; Continue outer loop if not zero
+	; Outer loop iteration (16-bit decrement)
+	decf	pauseOuterL, F, A	; Decrement low byte
+	movf	pauseOuterL, W, A	; Load low byte to check for wrap
+	sublw	0xFF		; W - 0xFF, sets Z if low byte is 0xFF (wrapped from 0)
+	bz	delay_outer_borrow	; If wrapped (0xFF), borrow from high byte
+	bra	delay_outer_check	; Otherwise, check if done
+delay_outer_borrow:
+	decf	pauseOuter, F, A	; Decrement high byte when low byte wrapped
+delay_outer_check:
+	; Check if both bytes are zero (16-bit counter reached zero)
+	movf	pauseOuter, W, A	; Load high byte
+	bnz	delay_outer	; Continue if high byte not zero
+	movf	pauseOuterL, W, A	; Check low byte
+	bnz	delay_outer	; Continue if low byte not zero
 	return
 
 ; ============================================

@@ -108,6 +108,14 @@ The initial codebase is based on the master branch of MicroprocessorsLab. The ma
 **🔄 Future Expansion:**
 - Complex motion sequences
 - Inverse kinematics
+- **Stuck Motor Detection**: Current monitoring system to detect when motors are stuck or overloaded
+  - **Hardware**: Shunt resistor (e.g., 0.1Ω precision) placed in series with power supply return path. Voltage drop across shunt amplified via op-amp (LM358) or current-sense amplifier (INA180) to bring signal into ADC range (0-4.096V). Amplified signal fed to unused analog input (AN2 or AN3; AN0/AN1 reserved for joystick).
+  - **Software**: Periodic ADC polling during motor operations. Compare reading against calibrated threshold. If current exceeds threshold (indicating stuck motor or overload), trigger emergency shutdown routine that immediately stops all motors and halts program execution.
+  - **Design Considerations**: 
+    - Shunt value: 0.1Ω provides ~0.2-0.3V drop at 2-3A, requiring ~10-15× amplification for full ADC range
+    - Threshold calibration: Measure normal operating current (typically 1-2A for multiple motors) and set threshold at ~150-200% of normal (e.g., 2.5-3A)
+    - Polling frequency: Check current every 10-50ms during active motor operations to catch spikes quickly
+    - Low-side sensing (between load and ground) is simpler but loses ground reference; high-side sensing requires differential measurement
 
 ### Motor Control Architecture
 
