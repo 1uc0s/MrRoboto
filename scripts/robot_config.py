@@ -12,18 +12,18 @@ class RobotConfig:
     def __init__(self):
         # Link Lengths (mm) - Update these after physical measurement
         # Set to None if not yet measured, or provide estimated values
-        self.L0 = 100.0  # Base height (ground to shoulder pivot)
-        self.L1 = 150.0  # Upper arm length (shoulder to elbow)
-        self.L2 = 120.0  # Forearm length (elbow to wrist)
-        self.L3 = 80.0   # End effector length (wrist to gripper center)
+        self.L0 = 250.0  # Base height (ground to shoulder pivot)
+        self.L1 = 190.0  # Upper arm length (shoulder to elbow)
+        self.L2 = 190.0  # Forearm length (elbow to wrist)
+        self.L3 = 10.0   # End effector length (wrist to gripper center)
         
-        # Gear Ratios (steps per degree) - To be calibrated
+        # Gear Ratios (steps per degree) - Measured from calibration
         # Motor base: 7.5° step angle = 48 steps/revolution
-        # Multiply by gearhead ratio (to be measured)
+        # Shoulder/Elbow: 96 steps = 18.5° movement → 5.189 steps/degree
         self.gear_ratios = {
-            'base': 48.0 / 360.0,      # Placeholder: 0.133 steps/degree
-            'shoulder': 48.0 / 360.0,   # To be calibrated
-            'elbow': 48.0 / 360.0,      # To be calibrated
+            'base': 48.0 / 360.0,      # Placeholder: 0.133 steps/degree (to be calibrated)
+            'shoulder': 5.189,          # Measured: 96 steps = 18.5°
+            'elbow': 5.189,             # Measured: 96 steps = 18.5°
             'wrist': 48.0 / 360.0       # To be calibrated
         }
         
@@ -38,13 +38,16 @@ class RobotConfig:
         }
         
         # Coupling Parameters
-        # Shoulder-elbow coupling: scissor-like mechanism
-        # When shoulder moves back (decreasing angle from home), elbow closes (increasing angle)
-        # Model: theta3 = coupling_ratio * (home_theta2 - theta2) + home_theta3
-        # Or linear relationship: theta3 = a * theta2 + b
+        # Shoulder-elbow coupling: tendon-actuated mechanism (ONE-WAY coupling)
+        # When shoulder moves forward (+18.5°), tendon pulls elbow backward (-18.5°)
+        # The arms close together when shoulder moves forward
+        # IMPORTANT: Coupling is ONE-WAY only:
+        #   - Shoulder movement affects elbow (ratio = -1.0)
+        #   - Elbow can move independently without affecting shoulder
+        # Model: When shoulder moves, theta3_coupled = coupling_ratio * theta2 + theta3_independent
         self.coupling_enabled = True
-        self.coupling_ratio = 1.0  # 1:1 coupling (to be measured)
-        self.coupling_offset = 0.0  # Offset term (to be calibrated)
+        self.coupling_ratio = -1.0  # Negative for opposite directions (measured)
+        self.coupling_offset = 0.0  # No offset (measured)
         
         # Home Position (degrees) - All motors at mechanical limits
         self.home_position = {

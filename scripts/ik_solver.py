@@ -9,7 +9,12 @@ from robot_config import RobotConfig
 
 
 class IKSolver:
-    """Inverse kinematics solver for coupled 4-DOF planar robot arm."""
+    """
+    Inverse kinematics solver for coupled 4-DOF planar robot arm.
+    
+    Handles one-way tendon coupling: shoulder movement affects elbow,
+    but elbow can move independently. Coupling ratio = -1.0 (opposite directions).
+    """
     
     def __init__(self, config: RobotConfig):
         """
@@ -144,6 +149,11 @@ class IKSolver:
         Solve 2-DOF problem with shoulder-elbow coupling.
         
         Uses forward kinematics search to find theta2 that reaches target.
+        
+        IMPORTANT: Coupling is ONE-WAY (tendon-actuated):
+        - Shoulder movement affects elbow (coupling_ratio = -1.0)
+        - When shoulder moves forward, elbow moves backward (arms close)
+        - Elbow can move independently without affecting shoulder
         
         Args:
             x: Horizontal distance (rho)

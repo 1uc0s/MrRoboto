@@ -16,14 +16,18 @@ psect motor_code,class=CODE,reloc=2
 
 ; Configuration constants - step counts for each degree of freedom
 ; Motor has 7.5° step angle = 48 steps per full rotation (360°)
-BASE_STEPS	EQU	0x60	; 96 steps = 2 full rotations (base has 360° freedom)
-CLAW_STEPS	EQU	0x60	; 96 steps = 2 full rotations
-SHOULDER_STEPS	EQU	0x60	; 96 steps = 2 full rotations
-ELBOW_STEPS	EQU	0x60	; 96 steps = 2 full rotations
-WRIST_STEPS	EQU	0x60	; 96 steps = 2 full rotations
+; MEASURED GEAR RATIOS (from calibration):
+;   Shoulder/Elbow: 96 steps = 18.5° → 5.189 steps/degree
+;   Tendon coupling: Shoulder forward → Elbow backward (ONE-WAY, ratio = -1.0)
+;   Elbow can move independently without affecting shoulder
+BASE_STEPS	EQU	0x60	; 96 steps for demo
+CLAW_STEPS	EQU	0x60	; 96 steps for demo
+SHOULDER_STEPS	EQU	0x60	; 96 steps = 18.5° (measured with gearhead)
+ELBOW_STEPS	EQU	0x60	; 96 steps = 18.5° (measured with gearhead)
+WRIST_STEPS	EQU	0x60	; 96 steps for demo
 BIDIR_TEST_STEPS	EQU	0x120	; 288 steps = 3 full rotations (legacy)
-MOTOR_STEPS_PER_SEC	EQU	100	; Motor speed in steps per second (100 = faster)
-BASE_STEPS_PER_SEC	EQU	100	; Base motor speed in steps per second (100 = faster)
+MOTOR_STEPS_PER_SEC	EQU	200	; Motor speed in steps per second (100 = faster)
+BASE_STEPS_PER_SEC	EQU	200	; Base motor speed in steps per second (100 = faster)
 
 ; Export functions for use in other modules
 global	Motor_Init, Motor_BidirectionalTest, Motor_StepForward, Motor_StepBackward, Motor_StepsForward, Motor_StepsBackward, Motor_StepDelay

@@ -6,6 +6,29 @@ Repository for developing a simple robot arm using stepper motors with a PIC18 m
 
 This project is based on the MicroprocessorsLab repository and extends it to control a robot arm using stepper motors. The codebase includes PIC18 assembly programs and documentation for interfacing with the EasyPIC Pro v7 development board.
 
+### Control Architecture
+
+The robot can be controlled in two modes:
+
+1. **Direct Assembly Control**: Low-level motor control via PIC18 assembly (`motor_control.s`)
+2. **Python IK Control**: High-level inverse kinematics with PySerial communication (`scripts/`)
+
+The Python control system provides:
+- Inverse kinematics solver for cylindrical coordinates (ρ, φ, z)
+- Explicit modeling of shoulder-elbow mechanical coupling
+- Serial communication protocol for PIC18 control
+- 3D visualization and trajectory planning
+- Interactive calibration wizard
+
+**Quick Start (Python IK):**
+```bash
+cd scripts
+pip install -r requirements.txt
+python main_control.py --mock --interactive  # Test without hardware
+```
+
+See [scripts/README.md](scripts/README.md) for complete Python system documentation.
+
 ## Hardware Components
 
 ### Robot Arm Architecture
@@ -107,7 +130,7 @@ The initial codebase is based on the master branch of MicroprocessorsLab. The ma
 
 **🔄 Future Expansion:**
 - Complex motion sequences
-- Inverse kinematics
+- ~~Inverse kinematics~~ ✅ **Implemented in Python** (see `scripts/`)
 - **Stuck Motor Detection**: Current monitoring system to detect when motors are stuck or overloaded
   - **Hardware**: Shunt resistor (e.g., 0.1Ω precision) placed in series with power supply return path. Voltage drop across shunt amplified via op-amp (LM358) or current-sense amplifier (INA180) to bring signal into ADC range (0-4.096V). Amplified signal fed to unused analog input (AN2 or AN3; AN0/AN1 reserved for joystick).
   - **Software**: Periodic ADC polling during motor operations. Compare reading against calibrated threshold. If current exceeds threshold (indicating stuck motor or overload), trigger emergency shutdown routine that immediately stops all motors and halts program execution.
@@ -146,3 +169,51 @@ To add Shoulder, Elbow, or Wrist motor control, follow the existing pattern in `
 5. Create/update interleaved functions as needed
 
 This pattern keeps the code simple, maintainable, and easy to debug.
+
+### Python Control System (Inverse Kinematics)
+
+The `scripts/` directory contains a complete Python-based control system for high-level robot control:
+
+**Architecture:**
+```
+Python (IK Solver + Control)  ←→  PySerial  ←→  PIC18 (Motor Control)
+```
+
+**Key Features:**
+- **Inverse Kinematics**: Solve joint angles from cylindrical coordinates (ρ, φ, z)
+- **Coupling Support**: Models shoulder-elbow mechanical coupling (scissor linkage)
+- **Serial Protocol**: Command-based communication with PIC18
+- **3D Visualization**: Real-time matplotlib visualization of robot pose
+- **Calibration**: Interactive wizard for measuring robot parameters
+- **Test Trajectories**: Circle, figure-eight, workspace boundary tests
+
+**Quick Start:**
+```bash
+cd scripts
+pip install -r requirements.txt
+
+# Test without hardware
+python main_control.py --mock --interactive
+
+# With hardware (after calibration)
+python main_control.py --calibrate              # First time
+python main_control.py --load-calib calibration.json --test all
+```
+
+**Serial Communication Protocol:**
+
+The Python system sends commands to the PIC18 via UART (9600 baud):
+- `MOVE <θ1> <θ2> <θ3> <θ4>` - Move to joint angles
+- `HOME` - Return to home position
+- `STOP` - Emergency stop
+- `STATUS` - Query current angles
+
+The PIC18 assembly handler (`serial_handler.s`) receives commands and controls motors.
+
+**Integration:**
+1. Include `serial_handler.s` in PIC18 project
+2. Call `UART_Init` in main initialization
+3. Add `UART_RX_ISR` to interrupt service routine
+4. Link serial commands to `motor_control.s` functions
+
+See [scripts/README.md](scripts/README.md) for complete documentation.
