@@ -325,10 +325,15 @@ Stepper Motors
 **Problem:** Cannot connect to serial port
 
 **Solutions:**
-1. Check port name: `ls /dev/tty.*` (macOS/Linux) or Device Manager (Windows)
-2. Update port in `robot_config.py`: `config.serial_config['port'] = '/dev/tty.usbserial-XXX'`
-3. Check permissions: `sudo chmod 666 /dev/tty.usbserial-XXX`
-4. Try different baud rate: `config.serial_config['baudrate'] = 19200`
+1. **Windows:** Check Device Manager > Ports (COM & LPT) for COM port number
+   - Update in `robot_config.py`: `config.serial_config['port'] = 'COM3'` (or COM4, COM5, etc.)
+   - Ensure FTDI drivers installed (for FT232RL converter)
+   - Verify SW5.1 (RC6) and SW5.2 (RC7) are ON for USB-UART
+2. **macOS/Linux:** Check port name with `ls /dev/tty.*`
+   - Update in `robot_config.py`: `config.serial_config['port'] = '/dev/tty.usbserial-XXX'`
+   - Check permissions: `sudo chmod 666 /dev/tty.usbserial-XXX` (Linux/macOS)
+3. Verify baud rate is 9600 (standard for EasyPIC Pro 7)
+4. Try unplugging and replugging USB cable
 
 ### IK Solver Failures
 

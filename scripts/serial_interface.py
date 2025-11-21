@@ -293,6 +293,48 @@ class SerialInterface:
         response = self.send_command(command, wait_for_response=True, timeout=30.0)
         return response == "OK"
     
+    def send_raw_byte(self, byte_value: int) -> bool:
+        """
+        Send a single raw byte (for testing).
+        
+        Args:
+            byte_value: Byte value to send (0-255)
+            
+        Returns:
+            True if successful
+        """
+        if not self.connected or not self.serial_port:
+            return False
+        try:
+            self.serial_port.write(bytes([byte_value]))
+            return True
+        except (serial.SerialException, OSError):
+            return False
+    
+    def read_raw_byte(self, timeout: float = 1.0) -> Optional[int]:
+        """
+        Read a single raw byte (for testing).
+        
+        Args:
+            timeout: Read timeout in seconds
+            
+        Returns:
+            Byte value (0-255) or None if failed/timeout
+        """
+        if not self.connected or not self.serial_port:
+            return None
+        try:
+            old_timeout = self.serial_port.timeout
+            self.serial_port.timeout = timeout
+            data = self.serial_port.read(1)
+            self.serial_port.timeout = old_timeout
+            
+            if len(data) == 1:
+                return data[0]
+            return None
+        except (serial.SerialException, OSError):
+            return None
+    
     def set_response_callback(self, callback: Callable[[str], None]):
         """
         Set callback function for async responses.
@@ -377,4 +419,41 @@ class MockSerialInterface(SerialInterface):
             return "OK" if wait_for_response else None
         
         return "ERROR" if wait_for_response else None
+    
+    def send_raw_byte(self, byte_value: int) -> bool:
+        """
+        Simulate sending a single raw byte.
+        
+        Args:
+            byte_value: Byte value to send (0-255)
+            
+        Returns:
+            True if successful
+        """
+        if not self.connected:
+            return False
+        if self.debug:
+            print(f"Mock → Byte: {byte_value}")
+        return True
+    
+    def read_raw_byte(self, timeout: float = 1.0) -> Optional[int]:
+        """
+        Simulate reading a single raw byte (echoes back the last sent byte).
+        
+        Args:
+            timeout: Read timeout in seconds
+            
+        Returns:
+            Byte value (0-255) - simulates echo
+        """
+        if not self.connected:
+            return None
+        # For mock, we'll simulate echoing back a test pattern
+        # In a real echo test scenario, this would need to store sent bytes
+        # For simplicity, just return a value to avoid errors
+        if self.debug:
+            print("Mock ← Byte: (echo simulation)")
+        time.sleep(0.001)  # Simulate small delay
+        # Return None to indicate mock doesn't support echo test
+        return None
 

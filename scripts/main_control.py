@@ -275,6 +275,55 @@ class RobotController:
         
         self.execute_trajectory(waypoints, delay=0.5)
     
+    def test_serial_echo(self, count: int = 256):
+        """
+        Test serial communication by sending numbers and expecting echo.
+        Useful for testing with RealTerm or similar terminal software.
+        
+        Args:
+            count: Number of values to test (default 256 for full byte range)
+        """
+        print(f"\nSerial Echo Test: Sending {count} values (0-{count-1})")
+        print("This tests basic UART TX/RX functionality")
+        
+        if not self.connected:
+            print("✗ Not connected to robot")
+            return False
+        
+        success_count = 0
+        fail_count = 0
+        
+        for i in range(count):
+            # Send byte value
+            test_byte = i % 256
+            sent = self.serial.send_raw_byte(test_byte)
+            
+            if not sent:
+                print(f"✗ Failed to send byte {test_byte}")
+                fail_count += 1
+                continue
+            
+            # Wait for echo response
+            response = self.serial.read_raw_byte(timeout=0.5)
+            
+            if response is None:
+                print(f"✗ No response for byte {test_byte}")
+                fail_count += 1
+            elif response == test_byte:
+                success_count += 1
+                if i % 32 == 0:  # Progress indicator every 32 bytes
+                    print(f"  Progress: {i}/{count} ({success_count} success, {fail_count} fail)")
+            else:
+                print(f"✗ Mismatch: sent {test_byte}, received {response}")
+                fail_count += 1
+        
+        print(f"\n{'='*60}")
+        print(f"Echo Test Complete: {success_count}/{count} successful")
+        print(f"Success rate: {100*success_count/count:.1f}%")
+        print(f"{'='*60}")
+        
+        return fail_count == 0
+    
     def interactive_mode(self):
         """Interactive control mode."""
         print("\n" + "="*60)
@@ -286,6 +335,8 @@ class RobotController:
         print("  home                  - Return to home")
         print("  status                - Show current position")
         print("  test <name>           - Run test (point|circle|eight|boundary)")
+        print("  coupling <on|off>     - Toggle shoulder-elbow coupling")
+        print("  echo [count]          - Test serial communication (default 256 bytes)")
         print("  quit                  - Exit")
         print()
         
@@ -367,6 +418,21 @@ class RobotController:
                     else:
                         print(f"Unknown test: {test_name}")
                 
+                elif parts[0] == 'coupling' and len(parts) >= 2:
+                    state = parts[1].lower()
+                    if state == 'on':
+                        self.config.coupling_enabled = True
+                        print("✓ Coupling enabled")
+                    elif state == 'off':
+                        self.config.coupling_enabled = False
+                        print("✓ Coupling disabled")
+                    else:
+                        print("Usage: coupling <on|off>")
+                
+                elif parts[0] == 'echo':
+                    count = int(parts[1]) if len(parts) >= 2 else 256
+                    self.test_serial_echo(count)
+                
                 else:
                     print("Unknown command or invalid arguments")
                 
@@ -429,6 +495,8 @@ def main():
                        help='Run specific test')
     parser.add_argument('--interactive', action='store_true',
                        help='Start interactive mode')
+    parser.add_argument('--no-coupling', action='store_true',
+                       help='Disable shoulder-elbow coupling')
     
     args = parser.parse_args()
     
@@ -444,6 +512,11 @@ def main():
         visualize=not args.no_viz,
         debug=args.debug
     )
+    
+    # Disable coupling if requested
+    if args.no_coupling:
+        config.coupling_enabled = False
+        print("Coupling disabled")
     
     # Connect
     if not controller.connect():

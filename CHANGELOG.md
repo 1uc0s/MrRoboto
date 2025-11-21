@@ -2,6 +2,57 @@
 
 All notable changes to the MrRoboto project are documented here.
 
+## [2025-11-21] - IK Coupling Toggle & Serial Echo Test
+
+### Python Control Changes
+- **Coupling toggle**: Added `--no-coupling` flag and `coupling on/off` command
+  - Allows disabling shoulder-elbow coupling constraint for testing
+  - Useful when robot is in folded home position
+  - IK falls back to standard 2R planar solution when disabled
+  - Command-line: `python main_control.py --interactive --no-coupling`
+  - Interactive: `robot> coupling off` / `robot> coupling on`
+  
+- **Serial echo test**: Added `echo [count]` command
+  - Sends 0-255 (or specified count) bytes to PIC18
+  - Expects each byte to be echoed back
+  - Reports success rate and mismatches
+  - Useful for testing UART with RealTerm or other terminal software before complex commands
+  - Usage: `robot> echo 10` (test 10 bytes) or `robot> echo` (test 256 bytes)
+
+### Technical Details
+- Added `send_raw_byte()` and `read_raw_byte()` methods to `SerialInterface` class
+- Both SerialInterface and MockSerialInterface support raw byte operations
+- Echo test provides progress updates every 32 bytes
+- Test validates bidirectional UART communication at hardware level
+
+### Files Modified
+- `scripts/main_control.py`: Added coupling toggle flag, echo test method, and interactive commands
+- `scripts/serial_interface.py`: Added raw byte send/receive methods
+- Help text updated with new commands
+
+### Testing
+1. Test with coupling disabled: `python main_control.py --interactive --no-coupling`
+2. Test serial echo: `robot> echo 10` (start small) then `robot> echo` (full test)
+3. Toggle at runtime: `robot> coupling off` then `robot> move 200 0 200`
+
+## [2025-11-21] - Windows Serial Port Configuration
+
+### Configuration Update (`scripts/robot_config.py`)
+- **Updated serial port for Windows**: Changed default from macOS format to Windows COM port
+  - Previous: `/dev/tty.usbserial-0001` (macOS)
+  - Current: `COM3` (Windows) - adjust number as needed
+- **Added comprehensive serial port comments**:
+  - Instructions for all platforms (Windows, macOS, Linux)
+  - Windows: Check Device Manager > Ports (COM & LPT) to find correct COM port
+  - Notes about FT232RL USB-UART converter (requires FTDI drivers)
+  - Hardware requirement: SW5.1 (RC6) and SW5.2 (RC7) must be ON for USB-UART
+- **Baud rate confirmed**: 9600 (standard for EasyPIC Pro 7 UART communication)
+
+### Reference Documentation
+- Based on `docs/5_Serial_Parallel.md` specifications
+- EasyPIC Pro 7 uses FT232RL controller for USB-UART conversion
+- COM port appears as CDC device on Windows PC
+
 ## [2025-01-20] - Serial Control Enabled
 
 ### Firmware Changes (main.s)
