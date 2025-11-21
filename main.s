@@ -1,11 +1,15 @@
 #include <xc.inc>
 
 extrn	Motor_Init, Motor_SequentialDemo  ; external subroutines
+extrn	UART_Init, UART_RX_ISR  ; UART functions for serial communication
 
 psect code, abs
 main:
 		org 0x0
 		goto	setup
+		
+		org 0x08			; High priority interrupt vector
+		goto	high_isr		; Jump to interrupt service routine
 		
 		org 0x100			    ; Main code starts here at address 0x100
 
@@ -28,13 +32,29 @@ setup:
 		
 		; ******* Motor Control Setup *********************
 		call	Motor_Init		; Initialize all motors (Base, Shoulder, Elbow, Wrist pitch, Wrist roll, Claw)
+		
+		; ******* UART Setup for Serial Communication ******
+		call	UART_Init		; Initialize UART for serial commands (9600 baud, interrupts enabled)
 		goto	start
 
 start:		
-		; Main loop: Run sequential demo continuously
-		; Cycles through all degrees of freedom (Base, Shoulder, Elbow, Wrist pitch, Wrist roll, Claw)
+		; Main loop: Wait for serial commands via UART interrupts
+		; Commands handled by UART_RX_ISR interrupt service routine
+		; Supported commands: STEP, MOVE, HOME, STOP, STATUS, SPEED, CAL
 loop:	
-		call	Motor_SequentialDemo	; Execute sequential demo on all DOFs
+		; Sequential demo commented out - now using serial control
+		; call	Motor_SequentialDemo	; Execute sequential demo on all DOFs
+		nop				; Idle - waiting for UART interrupts
 		bra		loop			; Loop forever
+
+; ==============================================================================
+; Interrupt Service Routine (ISR)
+; ==============================================================================
+high_isr:
+		; Handle UART receive interrupt
+		; UART_RX_ISR checks RC1IF internally and handles the interrupt
+		call	UART_RX_ISR		; Handle UART receive
+		
+		retfie				; Return from interrupt
 	
 	end main

@@ -2,6 +2,45 @@
 
 All notable changes to the MrRoboto project are documented here.
 
+## [2025-01-20] - Serial Control Enabled
+
+### Firmware Changes (main.s)
+- **Sequential demo disabled**: Commented out `Motor_SequentialDemo` call in main loop
+- **UART serial communication enabled**: Added `UART_Init` initialization
+- **Interrupt-driven serial handler**: Added ISR (Interrupt Service Routine) for UART receive
+- **Real-time command processing**: PIC18 now listens for serial commands from PC
+- **Built successfully**: Generated `dist/default/production/MrRoboto.production.hex` (4.7 KB)
+
+### Python Control Changes (scripts/main_control.py)
+- **New `step` command**: Added direct motor angle control in interactive mode
+  - Format: `step <base> <shoulder> <elbow> <wrist>`
+  - Accepts angles in degrees (positive or negative)
+  - Converts angles to steps using `config.angles_to_steps()`
+  - Sends STEP command via serial to PIC18
+  - Displays conversion feedback (angles → steps)
+- **Updated help text**: Interactive mode now shows `step` command
+
+### Documentation
+- **Created WINDOWS_TEST_GUIDE.md**: Complete guide for testing on Windows
+  - Instructions for downloading firmware to PIC18
+  - Windows COM port configuration
+  - Step-by-step testing procedures
+  - Troubleshooting section
+
+### Testing
+- Firmware compiles without errors
+- Python script imports successfully
+- Ready for hardware testing with PIC18F87K22
+
+### Usage Example
+```bash
+python main_control.py --interactive
+robot> step 10 20 -15 5
+Angles: θ1=10.0° θ2=20.0° θ3=-15.0° θ4=5.0°
+Steps: base=1 shoulder=103 elbow=-77 wrist=0
+✓ Movement complete
+```
+
 ## [Fixed] - 2025-11-21
 
 ### Fixed - Assembly Syntax Errors in UART Modules

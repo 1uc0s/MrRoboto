@@ -46,3 +46,8 @@ venv/
 
 #pdfs
 *.pdf
+# Ignore all docs except README.md and CHANGELOG.md
+*.md
+docs/*.md
+!/README.md
+!/CHANGELOG.md
