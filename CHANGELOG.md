@@ -10,35 +10,36 @@ All notable changes to the MrRoboto project are documented here.
 - Linker conflict prevented proper UART functionality
 - Python echo test showed 0% success rate - PIC not echoing bytes
 
-### Solution: Standalone Echo Test
-Created minimal `uart_echo_test.s` to isolate and test basic UART communication:
-- Simple RX interrupt → immediate TX echo
-- No command parsing, no buffers
-- Validates hardware, COM port, baud rate, drivers
+### Solution: Direct Echo in ISR
+Modified `main.s` to add simple echo functionality directly in the interrupt handler:
+- ISR checks RC1IF flag
+- Reads byte from RCREG1
+- Immediately writes to TXREG1 (echo)
+- Error handling for OERR and FERR
+- Bypasses UART_RX_ISR command parsing for testing
 
 ### Files Modified
-1. **main.s** - Temporarily commented out with restoration instructions
-   - All original code preserved with leading semicolons
-   - Clear instructions at top for restoring
+1. **main.s** - Added echo test mode to ISR
+   - Removed call to UART_RX_ISR (commented in extrn)
+   - Direct echo implementation in high_isr
+   - Still calls UART_Init for setup
+   - Motor initialization preserved
    
-2. **uart_echo_test.s** - NEW standalone echo test program
-   - ~110 lines, fully commented
-   - Initializes UART at 9600 baud, 8N1
-   - RX interrupt echoes each received byte back
-   - Error handling for OERR and FERR
+2. **uart_echo_test.s** - Created as reference (standalone version if needed)
 
 ### Testing Procedure
 
 **Step 1: Build and Program**
 ```
-1. In MPLAB X, build project (uart_echo_test.s will be compiled)
+1. In MPLAB X, Clean and Build project
 2. Program PIC18F87K22 with generated hex file
-3. Ensure SW5.1 (RC6) and SW5.2 (RC7) are ON
+3. CRITICAL: Ensure SW5.1 (RC6) and SW5.2 (RC7) are ON
+4. Power cycle the board after programming
 ```
 
 **Step 2: Python Echo Test**
 ```bash
-python main_control.py --interactive
+python scripts/main_control.py --interactive
 robot> echo 10        # Test 10 bytes
 robot> echo           # Test full 256 bytes
 ```
@@ -46,20 +47,75 @@ Expected: 100% success rate
 
 **Step 3: RealTerm Test**
 ```
-1. Open RealTerm, set COM3 (or your port), 9600 baud
+1. Open RealTerm, set correct COM port, 9600 baud, 8N1
 2. Type characters in Send tab
 3. Should see immediate echo in Display tab
 ```
 
-### Restoring Original Functionality
+### Troubleshooting - Still Getting 0% Response
 
-After verifying echo test works:
+**1. Check Hardware Switches (MOST COMMON)**
+- SW5.1 (RC6/TX) must be ON
+- SW5.2 (RC7/RX) must be ON
+- Located on EasyPIC Pro 7 board
+- These connect UART pins to USB-UART converter
 
-**Step 1: Uncomment main.s**
+**2. Verify COM Port**
+```bash
+# Windows: Device Manager > Ports (COM & LPT)
+# Look for: "USB Serial Port (COMx)"
+# Update robot_config.py if different from COM3
 ```
-1. Open main.s
-2. Remove leading semicolons from all lines after the header
-3. Save file
+
+**3. Check FTDI Drivers**
+```bash
+# Download from: http://www.ftdichip.com/Drivers/VCP.htm
+# Install VCP (Virtual COM Port) drivers
+# Restart computer after installation
+```
+
+**4. Verify UART_Init in uart.s**
+Check that uart.s UART_Init enables interrupts:
+```assembly
+bsf RC1IE      ; Enable RX interrupt
+bsf PEIE       ; Enable peripheral interrupts  
+bsf GIE        ; Enable global interrupts
+```
+
+**5. Test with Loopback**
+- Disconnect from PC
+- Connect TX to RX physically (RC6 to RC7)
+- Use oscilloscope to verify TX is transmitting
+- If no TX activity, UART not initialized properly
+
+**6. Exclude serial_handler.s**
+In MPLAB X:
+```
+Right-click serial_handler.s → Exclude from Build
+(Prevents conflict with uart.s)
+```
+
+**7. Check Power**
+- PIC needs 5V power
+- Motors need separate 8-12V supply
+- Common ground between all supplies
+
+### Restoring Command Processing (After Echo Works)
+
+Once echo test confirms UART communication is working:
+
+**Step 1: Restore UART_RX_ISR in main.s**
+```assembly
+; In main.s, change from:
+extrn	UART_Init
+
+; To:
+extrn	UART_Init, UART_RX_ISR
+
+; And in high_isr, replace echo code with:
+high_isr:
+    call    UART_RX_ISR
+    retfie
 ```
 
 **Step 2: Resolve uart.s / serial_handler.s Conflict**
@@ -72,16 +128,12 @@ Choose ONE option:
   - In MPLAB: Right-click uart.s → Exclude from Build
   - Both are functionally similar
 
-**Step 3: Exclude Echo Test**
-```
-In MPLAB: Right-click uart_echo_test.s → Exclude from Build
-```
-
-**Step 4: Rebuild and Test**
+**Step 3: Rebuild and Test Commands**
 ```
 1. Clean and Build project
 2. Program PIC18
-3. Test with Python: robot> move 200 0 200
+3. Test: robot> step 10 0 0 0
+4. Test: robot> move 200 0 200
 ```
 
 ### Technical Notes
