@@ -2,6 +2,94 @@
 
 All notable changes to the MrRoboto project are documented here.
 
+## [2025-11-21] - UART Echo Test for Debugging Serial Communication
+
+### Problem Identified
+- Both `uart.s` and `serial_handler.s` define the same functions (UART_Init, UART_RX_ISR)
+- Both use the same memory addresses (UART_RX_BUFFER at 0x100)
+- Linker conflict prevented proper UART functionality
+- Python echo test showed 0% success rate - PIC not echoing bytes
+
+### Solution: Standalone Echo Test
+Created minimal `uart_echo_test.s` to isolate and test basic UART communication:
+- Simple RX interrupt → immediate TX echo
+- No command parsing, no buffers
+- Validates hardware, COM port, baud rate, drivers
+
+### Files Modified
+1. **main.s** - Temporarily commented out with restoration instructions
+   - All original code preserved with leading semicolons
+   - Clear instructions at top for restoring
+   
+2. **uart_echo_test.s** - NEW standalone echo test program
+   - ~110 lines, fully commented
+   - Initializes UART at 9600 baud, 8N1
+   - RX interrupt echoes each received byte back
+   - Error handling for OERR and FERR
+
+### Testing Procedure
+
+**Step 1: Build and Program**
+```
+1. In MPLAB X, build project (uart_echo_test.s will be compiled)
+2. Program PIC18F87K22 with generated hex file
+3. Ensure SW5.1 (RC6) and SW5.2 (RC7) are ON
+```
+
+**Step 2: Python Echo Test**
+```bash
+python main_control.py --interactive
+robot> echo 10        # Test 10 bytes
+robot> echo           # Test full 256 bytes
+```
+Expected: 100% success rate
+
+**Step 3: RealTerm Test**
+```
+1. Open RealTerm, set COM3 (or your port), 9600 baud
+2. Type characters in Send tab
+3. Should see immediate echo in Display tab
+```
+
+### Restoring Original Functionality
+
+After verifying echo test works:
+
+**Step 1: Uncomment main.s**
+```
+1. Open main.s
+2. Remove leading semicolons from all lines after the header
+3. Save file
+```
+
+**Step 2: Resolve uart.s / serial_handler.s Conflict**
+Choose ONE option:
+- **Option A (Recommended)**: Keep uart.s only
+  - In MPLAB: Right-click serial_handler.s → Exclude from Build
+  - uart.s is more complete and tested
+  
+- **Option B**: Keep serial_handler.s only
+  - In MPLAB: Right-click uart.s → Exclude from Build
+  - Both are functionally similar
+
+**Step 3: Exclude Echo Test**
+```
+In MPLAB: Right-click uart_echo_test.s → Exclude from Build
+```
+
+**Step 4: Rebuild and Test**
+```
+1. Clean and Build project
+2. Program PIC18
+3. Test with Python: robot> move 200 0 200
+```
+
+### Technical Notes
+- SPBRG = 103 for 9600 baud @ 16MHz (verified working value)
+- Echo test validates full-duplex communication on single COM port
+- No need for separate TX/RX ports - uses same port bidirectionally
+- FTDI FT232RL USB-UART converter requires proper drivers
+
 ## [2025-11-21] - IK Coupling Toggle & Serial Echo Test
 
 ### Python Control Changes
