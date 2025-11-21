@@ -64,7 +64,8 @@ class RobotConfig:
         # Note: EasyPIC Pro 7 uses FT232RL USB-UART converter (requires FTDI drivers)
         #       Ensure SW5.1 (RC6) and SW5.2 (RC7) are ON to enable USB-UART
         self.serial_config = {
-            'port': 'COM3',  # Windows COM port - adjust number as needed
+            # 'port': 'COM3',  # Windows COM port - adjust number as needed
+            'port': '/dev/cu.usbserial-AQ018ZLG',  # macOS port (detected) - use cu. not tty.
             'baudrate': 9600,  # Standard baud rate for UART communication
             'timeout': 1.0,
             'write_timeout': 1.0

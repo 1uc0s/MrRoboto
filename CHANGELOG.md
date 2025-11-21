@@ -2,6 +2,49 @@
 
 All notable changes to the MrRoboto project are documented here.
 
+## [2025-11-21 PM] - Serial Port Configuration & Diagnostic Tools
+
+### Port Configuration Updated
+- Updated `scripts/robot_config.py` to use correct macOS serial port
+- Changed from `/dev/tty.usbserial-0003` to `/dev/tty.usbserial-AQ018ZLG`
+- Port detected by scanning `/dev/tty.*` devices
+
+### New Diagnostic Tools Added
+1. **scripts/serial_diagnostic.py** - Comprehensive serial troubleshooting
+   - Lists all available serial ports with FTDI detection
+   - Tests echo communication with detailed output
+   - Shows response timing and success rates
+   - Tests multiple baud rates if initial connection fails
+   - Checks DTR/RTS control lines
+   - Provides step-by-step troubleshooting guidance
+
+2. **docs/SERIAL_TROUBLESHOOTING.md** - Complete troubleshooting guide
+   - Hardware checklist (switches, power, cables)
+   - Firmware programming verification steps
+   - Common issues and solutions (ranked by likelihood)
+   - Echo test explanation (what happens on both sides)
+   - Hardware reference (pin assignments, switch settings)
+   - Advanced debugging techniques
+
+### Issue Identified: No Echo Response
+**Symptoms:**
+- Python shows "✓ Connected to robot"
+- Port opens successfully at 9600 baud
+- Echo test returns 0% success rate (no responses)
+
+**Most Likely Causes:**
+1. Hardware switches SW5.1/SW5.2 not ON
+2. Firmware not programmed to PIC18
+3. Microcontroller not running (needs reset)
+4. Wrong baud rate configuration
+
+**Next Steps:**
+1. Run `python3 scripts/serial_diagnostic.py` for automated testing
+2. Check hardware switches on EasyPIC Pro 7 board
+3. Verify firmware is programmed (reprogram if needed)
+4. Press RESET button on board
+5. Follow SERIAL_TROUBLESHOOTING.md guide
+
 ## [2025-11-21] - UART Echo Test for Debugging Serial Communication
 
 ### Problem Identified

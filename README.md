@@ -111,6 +111,20 @@ This guide includes:
 - **[ADC Devices](docs/8_Devices-ADC.md)** - Analog-to-digital conversion
 - **[Timers and Interrupts](docs/9_Devices-Timers-Interrupts.md)** - Timer configuration and ISRs
 
+### Troubleshooting & Diagnostics
+- **[Serial Troubleshooting Guide](docs/SERIAL_TROUBLESHOOTING.md)** - Complete guide for fixing serial communication issues
+- **[Serial Diagnostic Tool](scripts/serial_diagnostic.py)** - Automated serial port testing and diagnosis
+  ```bash
+  cd scripts
+  python3 serial_diagnostic.py  # Run diagnostic tool
+  ```
+  Common issues solved:
+  - "Connected but no echo response" (0% success rate)
+  - Hardware switch configuration (SW5.1/SW5.2)
+  - Firmware programming verification
+  - Baud rate mismatches
+  - Port conflicts and driver issues
+
 ## Development
 
 The initial codebase is based on the master branch of MicroprocessorsLab. The main program (`main.s`) interfaces with stepper motor drivers for robot arm control.
