@@ -2,6 +2,54 @@
 
 All notable changes to the MrRoboto project are documented here.
 
+## [2025-11-25] - STEP Command Architecture Overhaul
+
+### Major Changes - Moved Motor Execution Out of ISR
+**Problem:** Motor stepping (which takes seconds) was happening inside the UART interrupt handler. This caused UART overrun, timing issues, and prevented "OK" responses.
+
+**Solution:** Implemented flag-based command execution:
+1. ISR now only parses the command and sets `CMD_READY` flag
+2. Main loop polls `CMD_READY` and calls `Execute_Pending_Command`
+3. Motor execution happens in main loop context, not ISR
+
+**Changes to `main.s`:**
+```asm
+loop:
+    movf    CMD_READY, W, A     ; Check for pending command
+    bz      loop                ; No command, keep looping
+    call    Execute_Pending_Command
+    bra     loop
+```
+
+**Changes to `serial_handler.s`:**
+- `UART_Process_Command` now just parses and sets `CMD_READY = CMD_TYPE`
+- New `Execute_Pending_Command` function does actual motor execution
+- Added `CMD_READY` variable at 0x2F
+
+### Added - Debug Parameter Echo
+Before motor execution, parsed parameters are echoed back as hex:
+```
+P:64 00 00 00    (for "STEP 100 0 0 0")
+```
+This helps verify parsing is working correctly.
+
+### Added - Explicit Motor Hold
+After all stepping completes, explicitly rewrite motor patterns to ports:
+```asm
+Step_Hold_Motors:
+    call    WritePortD      ; Hold Base/Claw
+    call    WritePortE      ; Hold Shoulder/Elbow  
+    call    WritePortH      ; Hold Wrist
+```
+This ensures motors stay energized after movement.
+
+### Files Modified
+- `main.s` - Main loop now executes commands instead of ISR
+- `serial_handler.s` - Flag-based execution, debug echo, motor hold
+- `motor_control.s` - Exported WritePortD/E/H functions
+
+---
+
 ## [2025-11-25] - STEP Command Motor Control Bug Fixes (Updated)
 
 ### Fixed - PORT E Motors Not Responding (Shoulder/Elbow)

@@ -2,6 +2,7 @@
 
 extrn	Motor_Init, Motor_SequentialDemo  ; external subroutines
 extrn	UART_Init, UART_RX_ISR  ; UART initialization and ISR functions
+extrn	Execute_Pending_Command, CMD_READY  ; Command execution from main loop
 
 psect code, abs
 main:
@@ -52,11 +53,17 @@ setup:
 		goto	start
 
 start:		
-		; Main loop: Wait for serial commands via UART interrupts
-		; Commands handled by ISR
+		; Main loop: Check for pending commands and execute them
+		; ISR only parses commands and sets CMD_READY flag
+		; Motor execution happens here in main loop (not in ISR)
 loop:	
-		nop				; Idle - waiting for UART interrupts
-		bra		loop			; Loop forever
+		; Check if a command is ready to execute
+		movf	CMD_READY, W, A
+		bz		loop			; No command pending, keep looping
+		
+		; Command is ready - execute it (outside of ISR context)
+		call	Execute_Pending_Command
+		bra		loop			; Continue main loop
 
 ; ==============================================================================
 ; Interrupt Service Routine (ISR)

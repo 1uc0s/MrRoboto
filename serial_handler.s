@@ -23,7 +23,8 @@
 ; Exported Functions
 ; ==============================================================================
 global  UART_Init, UART_RX_ISR, UART_Send_OK, UART_Send_Error
-global  UART_Process_Command
+global  UART_Process_Command, Execute_Pending_Command
+global  CMD_READY
 
 ; ==============================================================================
 ; Imported Functions (from motor_control.s)
@@ -33,6 +34,7 @@ extrn Shoulder_StepsForward, Shoulder_StepsBackward
 extrn Elbow_StepsForward, Elbow_StepsBackward
 extrn Wrist_StepsForward, Wrist_StepsBackward
 extrn Claw_StepsForward, Claw_StepsBackward
+extrn WritePortD, WritePortE, WritePortH  ; For motor hold after stepping
 ; extrn Motor_Init ; Already called in main
 
 ; ==============================================================================
@@ -64,6 +66,9 @@ PARSE_PTR_L     EQU     0x2B
 PARSE_PTR_H     EQU     0x2C
 PARSE_TEMP      EQU     0x2D
 PARSE_SIGN      EQU     0x2E
+
+; Command execution flag (set by ISR, cleared by main loop after execution)
+CMD_READY       EQU     0x2F            ; 0 = no command, non-zero = command ready to execute
 
 ; Command type codes
 CMD_NONE        EQU     0x00
@@ -113,10 +118,11 @@ UART_Init:
     bsf	    INTCON, 6, A	; PEIE (Enable peripheral interrupts)
     bsf	    INTCON, 7, A	; GIE (Enable global interrupts)
     
-    ; Initialize buffer pointers
+    ; Initialize buffer pointers and flags
     clrf    UART_RX_IDX, A
     clrf    UART_RX_COUNT, A
     clrf    CMD_TYPE, A
+    clrf    CMD_READY, A        ; No command pending
     
     return
 
@@ -183,7 +189,7 @@ handle_ferr:
     return
 
 ; ==============================================================================
-; Process Received Command
+; Process Received Command (called from ISR - just parse and set flag)
 ; ==============================================================================
 UART_Process_Command:
     ; 1. Null-terminate the buffer string
@@ -194,36 +200,52 @@ UART_Process_Command:
     addwfc  FSR0H, F, A
     clrf    INDF0, A        ; Null terminate
     
-    ; 2. Parse Command
+    ; 2. Parse Command (fills CMD_TYPE and PARAMx_L)
     call    Parse_Command
     
-    ; 3. Execute Command
+    ; 3. Set command ready flag (main loop will execute)
     movf    CMD_TYPE, W, A
+    movwf   CMD_READY, A    ; CMD_READY = CMD_TYPE (non-zero if valid command)
+    
+    ; 4. Reset Buffer (ready for next command)
+    clrf    UART_RX_IDX, A
+    clrf    UART_RX_COUNT, A
+    return
+
+; ==============================================================================
+; Execute Pending Command (called from main loop, NOT from ISR)
+; ==============================================================================
+Execute_Pending_Command:
+    ; Check what command to execute
+    movf    CMD_READY, W, A
+    bz      Exec_Done_NoResponse    ; No command pending
+    
+    ; Check command type
     xorlw   CMD_STEP
     btfsc   STATUS, 2, A
     goto    Execute_Step
     
-    movf    CMD_TYPE, W, A
+    movf    CMD_READY, W, A
     xorlw   CMD_HOME
     btfsc   STATUS, 2, A
     goto    Execute_Home
     
-    movf    CMD_TYPE, W, A
+    movf    CMD_READY, W, A
     xorlw   CMD_STATUS
     btfsc   STATUS, 2, A
     goto    Execute_Status
     
-    ; Unknown command or parse error
+    ; Unknown command - send error
     call    UART_Send_Error
-    goto    UART_Reset_Buffer_End
+    goto    Exec_Clear_Flag
 
 Execute_Done:
     call    UART_Send_OK
 
-UART_Reset_Buffer_End:
-    ; 4. Reset Buffer
-    clrf    UART_RX_IDX, A
-    clrf    UART_RX_COUNT, A
+Exec_Clear_Flag:
+    clrf    CMD_READY, A    ; Clear flag - command processed
+    
+Exec_Done_NoResponse:
     return
 
 ; ==============================================================================
@@ -432,9 +454,12 @@ Execute_Home:
 
 Execute_Status:
     call    UART_Send_Status
-    goto    UART_Reset_Buffer_End
+    goto    Exec_Clear_Flag
 
 Execute_Step:
+    ; DEBUG: Echo back parsed parameters before execution
+    call    UART_Send_Debug_Params
+    
     ; Move motors based on params (signed 8-bit)
     ; Base (Param1)
     movf    PARAM1_L, W, A
@@ -482,17 +507,27 @@ Step_Elbow_Neg:
 
 Step_Wrist:
     movf    PARAM4_L, W, A
-    bz      Execute_Done    ; Skip if zero
+    bz      Step_Hold_Motors    ; Skip if zero, but still hold motors
     btfsc   WREG, 7, A
     bra     Step_Wrist_Neg
     call    Wrist_StepsForward
-    goto    Execute_Done
+    goto    Step_Hold_Motors
 Step_Wrist_Neg:
     ; Negate W using temp (negf WREG unreliable)
     movwf   PARSE_TEMP, A       ; Save to temp
     negf    PARSE_TEMP, A       ; Negate temp
     movf    PARSE_TEMP, W, A    ; Load back to W
     call    Wrist_StepsBackward
+    goto    Step_Hold_Motors
+
+; ==============================================================================
+; Ensure motor patterns are written to hold position after stepping
+; ==============================================================================
+Step_Hold_Motors:
+    ; Explicitly rewrite motor patterns to ports to ensure motors hold position
+    call    WritePortD          ; Hold Base and Claw motors
+    call    WritePortE          ; Hold Shoulder and Elbow motors
+    call    WritePortH          ; Hold Wrist motors
     goto    Execute_Done
 
 ; ==============================================================================
@@ -535,6 +570,83 @@ UART_Send_Status:
     movlw   'T'
     call    UART_TX_Byte_Fast
     movlw   0x0A
+    call    UART_TX_Byte_Fast
+    return
+
+; ==============================================================================
+; Debug: Send byte as 2-digit hex
+; ==============================================================================
+; Input: W = byte to send as hex
+; Output: Sends two ASCII hex characters
+UART_Send_Hex_Byte:
+    movwf   0x03, A             ; Save byte to temp
+    
+    ; Send high nibble
+    swapf   0x03, W, A          ; Get high nibble in low position
+    andlw   0x0F                ; Mask to 4 bits
+    movwf   0x04, A             ; Save nibble value
+    call    Nibble_To_Hex       ; Convert and send
+    
+    ; Send low nibble
+    movf    0x03, W, A          ; Get original byte
+    andlw   0x0F                ; Mask low nibble
+    movwf   0x04, A             ; Save nibble value
+    call    Nibble_To_Hex       ; Convert and send
+    return
+
+; Convert nibble (0-15) in 0x04 to ASCII hex char and send
+; Input: 0x04 = nibble value (0-15)
+; Trashes: W
+Nibble_To_Hex:
+    movf    0x04, W, A          ; Get nibble
+    sublw   9                   ; W = 9 - nibble, C=0 if nibble > 9
+    btfss   STATUS, 0, A        ; Skip if nibble <= 9
+    bra     Nibble_Hex_Letter
+    ; Nibble <= 9, use '0'-'9'
+    movf    0x04, W, A          ; Get nibble again
+    addlw   '0'                 ; Convert to ASCII '0'-'9'
+    call    UART_TX_Byte_Fast
+    return
+Nibble_Hex_Letter:
+    ; Nibble > 9, use 'A'-'F'
+    movf    0x04, W, A          ; Get nibble
+    addlw   -10                 ; Convert 10-15 to 0-5
+    addlw   'A'                 ; Convert to ASCII 'A'-'F'
+    call    UART_TX_Byte_Fast
+    return
+
+; ==============================================================================
+; Debug: Send parsed parameters as hex string
+; ==============================================================================
+UART_Send_Debug_Params:
+    ; Send "P:" prefix
+    movlw   'P'
+    call    UART_TX_Byte_Fast
+    movlw   ':'
+    call    UART_TX_Byte_Fast
+    
+    ; Send PARAM1_L
+    movf    PARAM1_L, W, A
+    call    UART_Send_Hex_Byte
+    movlw   ' '
+    call    UART_TX_Byte_Fast
+    
+    ; Send PARAM2_L
+    movf    PARAM2_L, W, A
+    call    UART_Send_Hex_Byte
+    movlw   ' '
+    call    UART_TX_Byte_Fast
+    
+    ; Send PARAM3_L
+    movf    PARAM3_L, W, A
+    call    UART_Send_Hex_Byte
+    movlw   ' '
+    call    UART_TX_Byte_Fast
+    
+    ; Send PARAM4_L
+    movf    PARAM4_L, W, A
+    call    UART_Send_Hex_Byte
+    movlw   0x0A                ; Newline
     call    UART_TX_Byte_Fast
     return
 

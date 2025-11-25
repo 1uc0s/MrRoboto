@@ -37,6 +37,7 @@ global	Base_StepsForward, Base_StepsBackward, Claw_StepsForward, Claw_StepsBackw
 global	Shoulder_StepForward, Shoulder_StepBackward, Shoulder_StepsForward, Shoulder_StepsBackward
 global	Elbow_StepForward, Elbow_StepBackward, Elbow_StepsForward, Elbow_StepsBackward
 global	Wrist_StepForward, Wrist_StepBackward, Wrist_StepsForward, Wrist_StepsBackward
+global	WritePortD, WritePortE, WritePortH  ; For motor hold after stepping
 
 ; Motor step sequence constants (unipolar wave drive - one coil at a time)
 ; According to Philips documentation: Wave drive sequence is 1→3→2→4
