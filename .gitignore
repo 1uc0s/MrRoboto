@@ -51,3 +51,6 @@ venv/
 docs/*.md
 !/README.md
 !/CHANGELOG.md
+
+#remove the pychache \
+__pycache__/

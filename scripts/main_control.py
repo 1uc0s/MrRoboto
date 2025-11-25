@@ -331,7 +331,7 @@ class RobotController:
         print("="*60)
         print("\nCommands:")
         print("  move <rho> <phi> <z>  - Move to position")
-        print("  step <base> <shoulder> <elbow> <wrist>  - Move motors by angles (degrees)")
+        print("  step <base> <shoulder> <elbow> <wrist>  - Move motors by step counts (raw steps)")
         print("  home                  - Return to home")
         print("  status                - Show current position")
         print("  test <name>           - Run test (point|circle|eight|boundary)")
@@ -373,25 +373,20 @@ class RobotController:
                     print(f"Position: (ρ={rho:.1f}, φ={phi:.1f}°, z={z:.1f})")
                 
                 elif parts[0] == 'step' and len(parts) >= 5:
-                    # Parse angle arguments
-                    base_angle = float(parts[1])
-                    shoulder_angle = float(parts[2])
-                    elbow_angle = float(parts[3])
-                    wrist_angle = float(parts[4])
+                    # Parse step count arguments (raw step counts, not angles)
+                    base_steps = int(parts[1])
+                    shoulder_steps = int(parts[2])
+                    elbow_steps = int(parts[3])
+                    wrist_steps = int(parts[4])
                     
-                    # Create angles dictionary
-                    angles = {
-                        'base': base_angle,
-                        'shoulder': shoulder_angle,
-                        'elbow': elbow_angle,
-                        'wrist': wrist_angle
+                    # Create steps dictionary (direct step counts)
+                    steps = {
+                        'base': base_steps,
+                        'shoulder': shoulder_steps,
+                        'elbow': elbow_steps,
+                        'wrist': wrist_steps
                     }
                     
-                    # Convert angles to steps
-                    steps = self.config.angles_to_steps(angles)
-                    
-                    print(f"Angles: θ1={base_angle:.1f}° θ2={shoulder_angle:.1f}° "
-                          f"θ3={elbow_angle:.1f}° θ4={wrist_angle:.1f}°")
                     print(f"Steps: base={steps['base']} shoulder={steps['shoulder']} "
                           f"elbow={steps['elbow']} wrist={steps['wrist']}")
                     

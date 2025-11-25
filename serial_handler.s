@@ -265,6 +265,8 @@ Parse_ST_Cmd:
     btfsc   STATUS, 2, A
     goto    Set_Cmd_Step
     
+    ; Reload character for STATUS check (sublw modified WREG)
+    movf    INDF0, W, A     ; Next char again
     sublw   'A'             ; STATUS
     btfsc   STATUS, 2, A
     goto    Set_Cmd_Status
