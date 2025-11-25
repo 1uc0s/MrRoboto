@@ -190,8 +190,9 @@ handle_ferr:
 ; Helper Functions
 ; ==============================================================================
 Transmit_Byte:
-    ; Wait for TX buffer to be empty
-    btfss   TXSTA1, 1, A    ; TRMT (Transmit Shift Register Status)
+    ; Wait for TX buffer to be empty (TX1IF) instead of Shift Register (TRMT)
+    ; This allows double-buffering (loading next byte while current is sending)
+    btfss   PIR1, 4, A      ; TX1IF (PIR1 bit 4)
     bra     Transmit_Byte
     movwf   TXREG1, A       ; Send W
     return
