@@ -2,6 +2,41 @@
 
 All notable changes to the MrRoboto project are documented here.
 
+## [2025-11-25] - STEP Command Motor Control Bug Fixes
+
+### Fixed - PORT E Motors Not Responding (Shoulder/Elbow)
+**Root Cause:** PORT E pins default to analog mode on PIC18F87K22. Without disabling analog functionality, writes to PORT E have no effect.
+
+**Fix:** Added ADCON1 configuration in `main.s` to make all pins digital:
+```assembly
+movlw   0x0F        ; PCFG3:0 = 1111 = all digital I/O
+movwf   ADCON1, A   ; Configure ADC for all digital
+```
+
+### Fixed - Negative Step Counts Not Working
+**Root Cause:** The `negf WREG, A` instruction was being used to negate the W register, but this is unreliable on PIC18.
+
+**Fix:** Replaced all 4 instances of `negf WREG, A` in `serial_handler.s` with proper temp-based negation:
+```assembly
+movwf   PARSE_TEMP, A       ; Save to temp
+negf    PARSE_TEMP, A       ; Negate temp
+movf    PARSE_TEMP, W, A    ; Load back to W
+```
+
+### Files Modified
+- `main.s`: Added analog disable before port configuration
+- `serial_handler.s`: Fixed negation for all 4 motors (Base, Shoulder, Elbow, Wrist)
+
+### Testing
+After flashing the new firmware (`dist/default/production/MrRoboto.production.hex`):
+- `step 100 0 0 0` - Base should move 100 steps forward
+- `step -100 0 0 0` - Base should move 100 steps backward
+- `step 0 100 0 0` - Shoulder should now move (was broken before)
+- `step 0 0 100 0` - Elbow should now move (was broken before)
+- `step 0 0 0 100` - Wrist should move
+
+---
+
 ## [2025-11-21 PM] - Serial Port Configuration & Diagnostic Tools
 
 ### Port Configuration Updated

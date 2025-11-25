@@ -446,7 +446,10 @@ Execute_Step:
     call    Base_StepsForward
     bra     Step_Shoulder
 Step_Base_Neg:
-    negf    WREG, A
+    ; Negate W using temp (negf WREG unreliable)
+    movwf   PARSE_TEMP, A       ; Save to temp
+    negf    PARSE_TEMP, A       ; Negate temp
+    movf    PARSE_TEMP, W, A    ; Load back to W
     call    Base_StepsBackward
 
 Step_Shoulder:
@@ -457,7 +460,10 @@ Step_Shoulder:
     call    Shoulder_StepsForward
     bra     Step_Elbow
 Step_Shoulder_Neg:
-    negf    WREG, A
+    ; Negate W using temp (negf WREG unreliable)
+    movwf   PARSE_TEMP, A       ; Save to temp
+    negf    PARSE_TEMP, A       ; Negate temp
+    movf    PARSE_TEMP, W, A    ; Load back to W
     call    Shoulder_StepsBackward
 
 Step_Elbow:
@@ -468,7 +474,10 @@ Step_Elbow:
     call    Elbow_StepsForward
     bra     Step_Wrist
 Step_Elbow_Neg:
-    negf    WREG, A
+    ; Negate W using temp (negf WREG unreliable)
+    movwf   PARSE_TEMP, A       ; Save to temp
+    negf    PARSE_TEMP, A       ; Negate temp
+    movf    PARSE_TEMP, W, A    ; Load back to W
     call    Elbow_StepsBackward
 
 Step_Wrist:
@@ -479,7 +488,10 @@ Step_Wrist:
     call    Wrist_StepsForward
     goto    Execute_Done
 Step_Wrist_Neg:
-    negf    WREG, A
+    ; Negate W using temp (negf WREG unreliable)
+    movwf   PARSE_TEMP, A       ; Save to temp
+    negf    PARSE_TEMP, A       ; Negate temp
+    movf    PARSE_TEMP, W, A    ; Load back to W
     call    Wrist_StepsBackward
     goto    Execute_Done
 

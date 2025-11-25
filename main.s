@@ -18,6 +18,11 @@ setup:
 		bcf		CFGS	; point to Flash program memory  
 		bsf		EEPGD		; access Flash program memory
 		
+		; ******* Disable Analog - Make All Pins Digital *******
+		; PORT E pins default to analog mode on PIC18 - must disable for motor control
+		movlw	0x0F		; PCFG3:0 = 1111 = all pins digital I/O
+		movwf	ADCON1, A	; Configure ADC for all digital
+		
 		; ******* Port Configuration (Motor Assignments) *******
 		; PORT D: Claw Motor (bits 0-3) and Base Motor (bits 4-7)
 		; PORT E: Shoulder Motor (bits 0-3) and Elbow Motor (bits 4-7)
