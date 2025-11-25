@@ -85,7 +85,7 @@ UART_Init:
     ; Assumes FOSC = 64 MHz (16MHz Crystal + PLL)
     
     ; Disable UART
-    bcf	    SPEN, A		; Serial port disable
+    bcf	    RCSTA1, 7, A	; SPEN=0 (Serial Port Disable)
     
     ; Configure baud rate generator
     ; Formula: Baud = FOSC / (64 * (SPBRG + 1))
