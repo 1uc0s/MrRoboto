@@ -6,6 +6,7 @@ Handles PySerial communication with the PIC18 microcontroller.
 import serial
 import time
 import threading
+import queue
 from typing import Dict, Optional, Callable
 from robot_config import RobotConfig
 
@@ -32,6 +33,12 @@ class SerialInterface:
         # Background reader thread
         self.reader_thread: Optional[threading.Thread] = None
         self.running = False
+        
+        # Synchronization for synchronous commands
+        self.response_queue = queue.Queue()
+        self.waiting_for_response = False
+        self.response_lock = threading.Lock()
+        self._reader_paused = False
         
     def connect(self) -> bool:
         """
@@ -95,11 +102,22 @@ class SerialInterface:
         """Background loop to read serial responses."""
         while self.running and self.serial_port and self.serial_port.is_open:
             try:
+                if self._reader_paused:
+                    time.sleep(0.01)
+                    continue
+
                 if self.serial_port.in_waiting > 0:
                     line = self.serial_port.readline().decode('ascii', errors='ignore').strip()
                     if line and self.debug:
                         print(f"← Received: {line}")
                     
+                    # Check if main thread is waiting for response
+                    with self.response_lock:
+                        if self.waiting_for_response:
+                            self.response_queue.put(line)
+                            continue
+                    
+                    # Otherwise process as async message
                     if self.response_callback:
                         self.response_callback(line)
                 else:
@@ -135,27 +153,40 @@ class SerialInterface:
             if self.debug:
                 print(f"→ Sending: {command}")
             
+            # Prepare for response if needed
+            if wait_for_response:
+                with self.response_lock:
+                    self.waiting_for_response = True
+                    # Clear any stale responses
+                    while not self.response_queue.empty():
+                        try:
+                            self.response_queue.get_nowait()
+                        except queue.Empty:
+                            break
+            
             self.serial_port.write(cmd.encode('ascii'))
             
             if wait_for_response:
-                start_time = time.time()
-                while (time.time() - start_time) < timeout:
-                    if self.serial_port.in_waiting > 0:
-                        response = self.serial_port.readline().decode('ascii', errors='ignore').strip()
-                        if self.debug:
-                            print(f"← Response: {response}")
-                        return response
-                    time.sleep(0.01)
-                
-                if self.debug:
-                    print("Response timeout")
-                return None
+                try:
+                    # Wait for response from reader thread
+                    response = self.response_queue.get(timeout=timeout)
+                    return response
+                except queue.Empty:
+                    if self.debug:
+                        print("Response timeout")
+                    return None
+                finally:
+                    with self.response_lock:
+                        self.waiting_for_response = False
             
             return None
             
         except (serial.SerialException, OSError) as e:
             if self.debug:
                 print(f"Send error: {e}")
+            # Ensure flag is cleared on error
+            with self.response_lock:
+                self.waiting_for_response = False
             return None
     
     def move_to_angles(self, angles: Dict[str, float], 
@@ -323,6 +354,10 @@ class SerialInterface:
         """
         if not self.connected or not self.serial_port:
             return None
+            
+        self._reader_paused = True
+        time.sleep(0.02) # Wait for loop to pause
+        
         try:
             old_timeout = self.serial_port.timeout
             self.serial_port.timeout = timeout
@@ -334,6 +369,8 @@ class SerialInterface:
             return None
         except (serial.SerialException, OSError):
             return None
+        finally:
+            self._reader_paused = False
     
     def set_response_callback(self, callback: Callable[[str], None]):
         """

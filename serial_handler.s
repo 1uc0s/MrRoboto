@@ -44,26 +44,26 @@ FOSC            EQU     16000000        ; Oscillator frequency (16 MHz)
 ; UART Receive Buffer (Allocated in Access Bank for speed)
 UART_RX_BUFFER_SIZE EQU 64
 UART_RX_BUFFER  EQU     0x100           ; Starting address for RX buffer (Bank 1)
-UART_RX_IDX     EQU     0xF0            ; Current index in RX buffer
-UART_RX_COUNT   EQU     0xF1            ; Number of bytes in buffer
+UART_RX_IDX     EQU     0x20            ; Current index in RX buffer (Relocated from 0xF0)
+UART_RX_COUNT   EQU     0x21            ; Number of bytes in buffer (Relocated from 0xF1)
 
 ; Command parsing
-CMD_TYPE        EQU     0xF2            ; Command type code
+CMD_TYPE        EQU     0x22            ; Command type code
 ; Parameters parsed from command string (16-bit signed integers)
-PARAM1_L        EQU     0xF3            ; Parameter 1 Low
-PARAM1_H        EQU     0xF4            ; Parameter 1 High
-PARAM2_L        EQU     0xF5            ; Parameter 2 Low
-PARAM2_H        EQU     0xF6            ; Parameter 2 High
-PARAM3_L        EQU     0xF7            ; Parameter 3 Low
-PARAM3_H        EQU     0xF8            ; Parameter 3 High
-PARAM4_L        EQU     0xF9            ; Parameter 4 Low
-PARAM4_H        EQU     0xFA            ; Parameter 4 High
+PARAM1_L        EQU     0x23            ; Parameter 1 Low
+PARAM1_H        EQU     0x24            ; Parameter 1 High
+PARAM2_L        EQU     0x25            ; Parameter 2 Low
+PARAM2_H        EQU     0x26            ; Parameter 2 High
+PARAM3_L        EQU     0x27            ; Parameter 3 Low
+PARAM3_H        EQU     0x28            ; Parameter 3 High
+PARAM4_L        EQU     0x29            ; Parameter 4 Low
+PARAM4_H        EQU     0x2A            ; Parameter 4 High
 
 ; Temp vars for parsing
-PARSE_PTR_L     EQU     0xFB
-PARSE_PTR_H     EQU     0xFC
-PARSE_TEMP      EQU     0xFD
-PARSE_SIGN      EQU     0xFE
+PARSE_PTR_L     EQU     0x2B
+PARSE_PTR_H     EQU     0x2C
+PARSE_TEMP      EQU     0x2D
+PARSE_SIGN      EQU     0x2E
 
 ; Command type codes
 CMD_NONE        EQU     0x00
