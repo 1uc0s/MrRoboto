@@ -2,21 +2,36 @@
 
 All notable changes to the MrRoboto project are documented here.
 
-## [2025-11-25] - STEP Command Motor Control Bug Fixes
+## [2025-11-25] - STEP Command Motor Control Bug Fixes (Updated)
 
 ### Fixed - PORT E Motors Not Responding (Shoulder/Elbow)
-**Root Cause:** PORT E pins default to analog mode on PIC18F87K22. Without disabling analog functionality, writes to PORT E have no effect.
+**Root Cause #1:** PIC18F87K22 uses `ANCON0`/`ANCON1` registers for analog pin configuration, NOT `ADCON1`. The initial fix used the wrong register and had no effect.
 
-**Fix:** Added ADCON1 configuration in `main.s` to make all pins digital:
+**Root Cause #2:** `CONFIG ECCPMX = PORTE` muxed Enhanced CCP outputs to RE3-RE6, which overlaps with Shoulder (RE3) and Elbow (RE4-RE6) motor control pins.
+
+**Fixes in `main.s`:**
 ```assembly
-movlw   0x0F        ; PCFG3:0 = 1111 = all digital I/O
-movwf   ADCON1, A   ; Configure ADC for all digital
+; Use correct registers for PIC18F87K22
+movlw   0xFF
+movwf   ANCON0, A   ; Make AN0-AN7 digital (RE0-RE2 for shoulder)
+movlw   0xFF
+movwf   ANCON1, A   ; Make AN8-AN15 digital
+
+; Disable CCP modules that could interfere with PORT E
+clrf    CCP1CON, A  ; Disable CCP1
+clrf    CCP2CON, A  ; Disable CCP2
+clrf    CCP3CON, A  ; Disable CCP3
+```
+
+**Fix in `config.s`:**
+```assembly
+CONFIG  ECCPMX = PORTH  ; Changed from PORTE - avoids conflict with motor pins
 ```
 
 ### Fixed - Negative Step Counts Not Working
-**Root Cause:** The `negf WREG, A` instruction was being used to negate the W register, but this is unreliable on PIC18.
+**Root Cause:** The `negf WREG, A` instruction is unreliable for negating the W register directly.
 
-**Fix:** Replaced all 4 instances of `negf WREG, A` in `serial_handler.s` with proper temp-based negation:
+**Fix:** Replaced all 4 instances in `serial_handler.s` with proper temp-based negation:
 ```assembly
 movwf   PARSE_TEMP, A       ; Save to temp
 negf    PARSE_TEMP, A       ; Negate temp
@@ -24,16 +39,22 @@ movf    PARSE_TEMP, W, A    ; Load back to W
 ```
 
 ### Files Modified
-- `main.s`: Added analog disable before port configuration
-- `serial_handler.s`: Fixed negation for all 4 motors (Base, Shoulder, Elbow, Wrist)
+- `main.s`: Use ANCON0/ANCON1, disable CCP modules
+- `config.s`: Changed ECCPMX from PORTE to PORTH
+- `serial_handler.s`: Fixed negation for all 4 motors
 
 ### Testing
 After flashing the new firmware (`dist/default/production/MrRoboto.production.hex`):
 - `step 100 0 0 0` - Base should move 100 steps forward
 - `step -100 0 0 0` - Base should move 100 steps backward
-- `step 0 100 0 0` - Shoulder should now move (was broken before)
-- `step 0 0 100 0` - Elbow should now move (was broken before)
+- `step 0 100 0 0` - Shoulder should now move
+- `step 0 0 100 0` - Elbow should now move
 - `step 0 0 0 100` - Wrist should move
+
+### Note on Motor Holding
+Motors should hold position after movement completes - the coil pattern remains written to the port latch registers (LATD, LATE, LATH). If motor becomes free after movement, check:
+1. Motor driver power supply
+2. L298N enable pins (should be tied high)
 
 ---
 

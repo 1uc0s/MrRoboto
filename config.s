@@ -35,7 +35,7 @@
 
 ; CONFIG3H
   CONFIG  CCP2MX = PORTC        ; CCP2 Mux (RC1)
-  CONFIG  ECCPMX = PORTE        ; ECCP Mux (Enhanced CCP1/3 [P1B/P1C/P3B/P3C] muxed with RE6/RE5/RE4/RE3)
+  CONFIG  ECCPMX = PORTH        ; ECCP Mux - USE PORTH NOT PORTE! (Avoids conflict with motor control on RE3-RE6)
   CONFIG  MSSPMSK = 1           ; MSSP address masking (7 Bit address masking mode)
   CONFIG  MCLRE = ON            ; Master Clear Enable (MCLR Enabled, RG5 Disabled)
 

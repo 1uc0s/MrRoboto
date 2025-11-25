@@ -19,9 +19,18 @@ setup:
 		bsf		EEPGD		; access Flash program memory
 		
 		; ******* Disable Analog - Make All Pins Digital *******
-		; PORT E pins default to analog mode on PIC18 - must disable for motor control
-		movlw	0x0F		; PCFG3:0 = 1111 = all pins digital I/O
-		movwf	ADCON1, A	; Configure ADC for all digital
+		; PIC18F87K22 uses ANCON0/ANCON1 (NOT ADCON1) for analog pin control
+		; RE0=AN5, RE1=AN6, RE2=AN7 - these MUST be digital for shoulder motor
+		movlw	0xFF		; All bits = 1 = all pins digital
+		movwf	ANCON0, A	; Make AN0-AN7 digital (includes RE0-RE2)
+		movlw	0xFF		; All bits = 1 = all pins digital
+		movwf	ANCON1, A	; Make AN8-AN15 digital
+		
+		; ******* Disable CCP/PWM modules that could interfere with PORT E *******
+		; ECCPMX config muxes CCP to RE3-RE6, ensure CCP is disabled
+		clrf	CCP1CON, A	; Disable CCP1 module
+		clrf	CCP2CON, A	; Disable CCP2 module
+		clrf	CCP3CON, A	; Disable CCP3 module
 		
 		; ******* Port Configuration (Motor Assignments) *******
 		; PORT D: Claw Motor (bits 0-3) and Base Motor (bits 4-7)
