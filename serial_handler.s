@@ -392,27 +392,10 @@ Parse_Digit_Loop:
     
     ; PARSE_TEMP = PARSE_TEMP * 10 + W
     ; Multiply by 10
-    movff   PARSE_TEMP, 0x01 ; Save
-    bcf     STATUS, 0, A     ; Clear C
-    rlncf   PARSE_TEMP, F, A ; *2
-    rlncf   PARSE_TEMP, F, A ; *4
-    addwf   PARSE_TEMP, F, A ; *4 + val
-    bcf     STATUS, 0, A
-    rlncf   PARSE_TEMP, F, A ; (*4 + val) * 2 ?? Wrong.
+    movff   PARSE_TEMP, 0x01 ; Save original value
     
-    ; Simple multiply: x10 = x8 + x2
-    ; x2
-    movf    0x01, W, A
-    addwf   0x01, W, A      ; W = temp * 2
-    movwf   0x02, A         ; Save x2
-    
-    ; x8
-    addwf   0x02, W, A      ; x4
-    addwf   0x02, W, A      ; x6 ... slow.
-    
-    ; Let's restart multiply logic
     ; x * 10 = (x * 2) * 5 ?? No.
-    ; x * 10 = (x << 3) + (x << 1)
+    ; x * 10 = (x << 3) + (x << 1) = x*8 + x*2
     movf    0x01, W, A      ; Original
     bcf     STATUS, 0, A
     rlncf   WREG, W, A      ; x2
@@ -455,6 +438,7 @@ Execute_Step:
     ; Move motors based on params (signed 8-bit)
     ; Base (Param1)
     movf    PARAM1_L, W, A
+    bz      Step_Shoulder   ; Skip if zero
     btfsc   WREG, 7, A      ; Check sign bit
     bra     Step_Base_Neg
     
@@ -467,6 +451,7 @@ Step_Base_Neg:
 
 Step_Shoulder:
     movf    PARAM2_L, W, A
+    bz      Step_Elbow      ; Skip if zero
     btfsc   WREG, 7, A
     bra     Step_Shoulder_Neg
     call    Shoulder_StepsForward
@@ -477,6 +462,7 @@ Step_Shoulder_Neg:
 
 Step_Elbow:
     movf    PARAM3_L, W, A
+    bz      Step_Wrist      ; Skip if zero
     btfsc   WREG, 7, A
     bra     Step_Elbow_Neg
     call    Elbow_StepsForward
@@ -487,6 +473,7 @@ Step_Elbow_Neg:
 
 Step_Wrist:
     movf    PARAM4_L, W, A
+    bz      Execute_Done    ; Skip if zero
     btfsc   WREG, 7, A
     bra     Step_Wrist_Neg
     call    Wrist_StepsForward

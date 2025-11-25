@@ -585,7 +585,10 @@ base_delay_outer_check:
 ; ============================================
 Motor_StepsForward:
 	movwf	stepCount, A	; Save step count
-	
+	tstfsz	stepCount, A	; Check if zero, skip next if so
+	bra	forward_loop
+	return
+
 forward_loop:
 	call	Both_StepForward	; Step both motors (interleaved)
 	call	Motor_StepDelay		; Delay after both motors step
@@ -600,7 +603,10 @@ forward_loop:
 ; ============================================
 Motor_StepsBackward:
 	movwf	stepCount, A	; Save step count
-	
+	tstfsz	stepCount, A	; Check if zero, skip next if so
+	bra	backward_loop
+	return
+
 backward_loop:
 	call	Both_StepBackward	; Step both motors backward (interleaved)
 	call	Motor_StepDelay		; Delay after both motors step
@@ -614,7 +620,10 @@ backward_loop:
 ; ============================================
 Base_StepsForward:
 	movwf	stepCount, A	; Save step count
-	
+	tstfsz	stepCount, A	; Check if zero
+	bra	base_forward_loop
+	return
+
 base_forward_loop:
 	call	Base_StepForward	; Step Base motor forward (full step)
 	call	Motor_StepDelayBase	; Slow delay (150 steps/min)
@@ -628,7 +637,10 @@ base_forward_loop:
 ; ============================================
 Base_StepsBackward:
 	movwf	stepCount, A	; Save step count
-	
+	tstfsz	stepCount, A	; Check if zero
+	bra	base_backward_loop
+	return
+
 base_backward_loop:
 	call	Base_StepBackward	; Step Base motor backward (full step)
 	call	Motor_StepDelayBase	; Slow delay (150 steps/min)
@@ -642,7 +654,10 @@ base_backward_loop:
 ; ============================================
 Claw_StepsForward:
 	movwf	stepCount, A	; Save step count
-	
+	tstfsz	stepCount, A	; Check if zero
+	bra	claw_forward_loop
+	return
+
 claw_forward_loop:
 	call	Claw_StepForward	; Step Claw motor forward
 	call	Motor_StepDelay		; Delay after step
@@ -656,7 +671,10 @@ claw_forward_loop:
 ; ============================================
 Claw_StepsBackward:
 	movwf	stepCount, A	; Save step count
-	
+	tstfsz	stepCount, A	; Check if zero
+	bra	claw_backward_loop
+	return
+
 claw_backward_loop:
 	call	Claw_StepBackward	; Step Claw motor backward
 	call	Motor_StepDelay		; Delay after step
@@ -670,7 +688,10 @@ claw_backward_loop:
 ; ============================================
 Shoulder_StepsForward:
 	movwf	stepCount, A	; Save step count
-	
+	tstfsz	stepCount, A	; Check if zero
+	bra	shoulder_forward_loop
+	return
+
 shoulder_forward_loop:
 	call	Shoulder_StepForward	; Step Shoulder motor forward
 	call	Motor_StepDelay		; Delay after step
@@ -684,7 +705,10 @@ shoulder_forward_loop:
 ; ============================================
 Shoulder_StepsBackward:
 	movwf	stepCount, A	; Save step count
-	
+	tstfsz	stepCount, A	; Check if zero
+	bra	shoulder_backward_loop
+	return
+
 shoulder_backward_loop:
 	call	Shoulder_StepBackward	; Step Shoulder motor backward
 	call	Motor_StepDelay		; Delay after step
@@ -698,7 +722,10 @@ shoulder_backward_loop:
 ; ============================================
 Elbow_StepsForward:
 	movwf	stepCount, A	; Save step count
-	
+	tstfsz	stepCount, A	; Check if zero
+	bra	elbow_forward_loop
+	return
+
 elbow_forward_loop:
 	call	Elbow_StepForward	; Step Elbow motor forward
 	call	Motor_StepDelay		; Delay after step
@@ -712,7 +739,10 @@ elbow_forward_loop:
 ; ============================================
 Elbow_StepsBackward:
 	movwf	stepCount, A	; Save step count
-	
+	tstfsz	stepCount, A	; Check if zero
+	bra	elbow_backward_loop
+	return
+
 elbow_backward_loop:
 	call	Elbow_StepBackward	; Step Elbow motor backward
 	call	Motor_StepDelay		; Delay after step
@@ -726,7 +756,10 @@ elbow_backward_loop:
 ; ============================================
 Wrist_StepsForward:
 	movwf	stepCount, A	; Save step count
-	
+	tstfsz	stepCount, A	; Check if zero
+	bra	wrist_forward_loop
+	return
+
 wrist_forward_loop:
 	call	Wrist_StepForward	; Step Wrist pitch and roll motors forward
 	call	Motor_StepDelay		; Delay after step
@@ -740,7 +773,10 @@ wrist_forward_loop:
 ; ============================================
 Wrist_StepsBackward:
 	movwf	stepCount, A	; Save step count
-	
+	tstfsz	stepCount, A	; Check if zero
+	bra	wrist_backward_loop
+	return
+
 wrist_backward_loop:
 	call	Wrist_StepBackward	; Step Wrist pitch and roll motors backward
 	call	Motor_StepDelay		; Delay after step
