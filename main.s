@@ -1,8 +1,7 @@
 #include <xc.inc>
 
 extrn	Motor_Init, Motor_SequentialDemo  ; external subroutines
-extrn	UART_Init  ; UART initialization function
-; Note: UART_RX_ISR commented out - using direct echo in ISR for testing
+extrn	UART_Init, UART_RX_ISR  ; UART initialization and ISR functions
 
 psect code, abs
 main:
@@ -40,49 +39,18 @@ setup:
 
 start:		
 		; Main loop: Wait for serial commands via UART interrupts
-		; Commands handled by ISR with simple echo for testing
+		; Commands handled by ISR
 loop:	
-		; Sequential demo commented out - now using serial control
-		; call	Motor_SequentialDemo	; Execute sequential demo on all DOFs
 		nop				; Idle - waiting for UART interrupts
 		bra		loop			; Loop forever
 
 ; ==============================================================================
-; Interrupt Service Routine (ISR) - ECHO TEST MODE
-; ==============================================================================
-; This ISR implements simple byte echo for testing UART communication
-; Once echo works, can be replaced with: call UART_RX_ISR
+; Interrupt Service Routine (ISR)
 ; ==============================================================================
 high_isr:
-		; Save context if needed (W, STATUS, BSR)
-		; For simple echo test, not strictly necessary
-		
 		; Check if this is UART RX interrupt
-		btfss	RC1IF		; Check UART1 RX interrupt flag
-		retfie				; Not UART interrupt, return
-		
-		; Read received byte (clears RC1IF)
-		movf	RCREG1, W, A	; Read byte into W
-		
-		; Check for receive errors
-		btfsc	OERR		; Check overrun error
-		bcf		CREN		; Clear by disabling receiver
-		btfsc	OERR
-		bsf		CREN		; Re-enable receiver
-		
-		btfsc	FERR		; Check framing error  
-		movf	RCREG1, W, A	; Clear by reading RCREG
-		
-		; Wait for TX buffer ready
-echo_wait:
-		btfss	TRMT		; Check if transmit register empty
-		bra		echo_wait	; Wait until ready
-		
-		; Echo byte back
-		movwf	TXREG1, A	; Write to transmit register
-		
-		; Clear interrupt flag (usually cleared by read, but ensure)
-		bcf		RC1IF
+		btfsc	PIR1, 5, A		; Check UART1 RX interrupt flag (RC1IF)
+		call	UART_RX_ISR		; Handle UART receive
 		
 		retfie				; Return from interrupt
 
