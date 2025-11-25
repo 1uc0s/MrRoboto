@@ -458,7 +458,8 @@ Execute_Status:
 
 Execute_Step:
     ; DEBUG: Echo back parsed parameters before execution
-    call    UART_Send_Debug_Params
+    ; DISABLED - interferes with Python response detection
+    ; call    UART_Send_Debug_Params
     
     ; Move motors based on params (signed 8-bit)
     ; Base (Param1)
