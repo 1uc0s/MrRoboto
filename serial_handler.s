@@ -87,6 +87,21 @@ MATH_TEMP_3     EQU     0x35
 STEPS_RESULT_L  EQU     0x36            ; Step conversion result (low)
 STEPS_RESULT_H  EQU     0x37            ; Step conversion result (high)
 
+; Current angle positions (16-bit, in tenths of degrees)
+; Used for absolute positioning - tracks where each joint currently is
+CURR_ANGLE1_L   EQU     0x40            ; Base current angle (low)
+CURR_ANGLE1_H   EQU     0x41            ; Base current angle (high)
+CURR_ANGLE2_L   EQU     0x42            ; Shoulder current angle (low)
+CURR_ANGLE2_H   EQU     0x43            ; Shoulder current angle (high)
+CURR_ANGLE3_L   EQU     0x44            ; Elbow current angle (low)
+CURR_ANGLE3_H   EQU     0x45            ; Elbow current angle (high)
+CURR_ANGLE4_L   EQU     0x46            ; Wrist current angle (low)
+CURR_ANGLE4_H   EQU     0x47            ; Wrist current angle (high)
+
+; Temp for delta calculation
+DELTA_L         EQU     0x48            ; Delta (target - current) low byte
+DELTA_H         EQU     0x49            ; Delta (target - current) high byte
+
 ; Command type codes
 CMD_NONE        EQU     0x00
 CMD_MOVE        EQU     0x01
@@ -167,6 +182,16 @@ UART_Init:
     clrf    UART_RX_COUNT, A
     clrf    CMD_TYPE, A
     clrf    CMD_READY, A        ; No command pending
+    
+    ; Initialize current angle positions to 0 (home position)
+    clrf    CURR_ANGLE1_L, A    ; Base
+    clrf    CURR_ANGLE1_H, A
+    clrf    CURR_ANGLE2_L, A    ; Shoulder
+    clrf    CURR_ANGLE2_H, A
+    clrf    CURR_ANGLE3_L, A    ; Elbow
+    clrf    CURR_ANGLE3_H, A
+    clrf    CURR_ANGLE4_L, A    ; Wrist
+    clrf    CURR_ANGLE4_H, A
     
     return
 
@@ -688,59 +713,83 @@ Execute_Status:
     goto    Exec_Clear_Flag
 
 ; ==============================================================================
-; Execute ANGLE Command - Convert angles (tenths) to steps and move motors
+; Execute ANGLE Command - Absolute positioning with delta calculation
 ; ==============================================================================
-; PARAM1 = base angle (tenths), PARAM2 = shoulder, PARAM3 = elbow, PARAM4 = wrist
-; Each angle is converted to steps using the gear ratios
-; Step counts can exceed 255, so we loop calling the motor function
+; PARAM1 = target base angle (tenths), PARAM2 = shoulder, PARAM3 = elbow, PARAM4 = wrist
+; Calculates delta = target - current for each joint
+; Converts delta to steps and moves motor in appropriate direction
+; Updates current position after movement
 Execute_Angle:
     ; --- Base Motor (PARAM1) ---
-    ; steps = angle_tenths * 96 / 185
-    movff   PARAM1_L, MATH_TEMP_0
-    movff   PARAM1_H, MATH_TEMP_1
-    movlw   RATIO_BASE_NUM          ; Numerator = 96
-    movwf   MATH_TEMP_2, A
-    movlw   RATIO_BASE_DEN          ; Denominator = 185
-    movwf   MATH_TEMP_3, A
-    call    Convert_Angle_To_Steps
-    ; Result in STEPS_RESULT_L:STEPS_RESULT_H (16-bit)
-    call    Step_Base_16bit
+    ; delta = target - current (signed 16-bit)
+    movf    CURR_ANGLE1_L, W, A
+    subwf   PARAM1_L, W, A          ; W = target_L - current_L
+    movwf   DELTA_L, A
+    movf    CURR_ANGLE1_H, W, A
+    subwfb  PARAM1_H, W, A          ; W = target_H - current_H - borrow
+    movwf   DELTA_H, A
+    
+    ; Convert delta (tenths) to steps: steps = delta * 96 / 185
+    ; Handle sign: save sign, work with absolute value, restore sign
+    movff   DELTA_L, MATH_TEMP_0
+    movff   DELTA_H, MATH_TEMP_1
+    call    Convert_Delta_To_Steps  ; Result in STEPS_RESULT (signed)
+    call    Step_Base_Signed
+    
+    ; Update current position = target
+    movff   PARAM1_L, CURR_ANGLE1_L
+    movff   PARAM1_H, CURR_ANGLE1_H
     
 Angle_Shoulder:
     ; --- Shoulder Motor (PARAM2) ---
-    ; steps = angle_tenths * 96 / 185
-    movff   PARAM2_L, MATH_TEMP_0
-    movff   PARAM2_H, MATH_TEMP_1
-    movlw   RATIO_SHOULDER_NUM      ; Numerator = 96
-    movwf   MATH_TEMP_2, A
-    movlw   RATIO_SHOULDER_DEN      ; Denominator = 185
-    movwf   MATH_TEMP_3, A
-    call    Convert_Angle_To_Steps
-    call    Step_Shoulder_16bit
+    movf    CURR_ANGLE2_L, W, A
+    subwf   PARAM2_L, W, A
+    movwf   DELTA_L, A
+    movf    CURR_ANGLE2_H, W, A
+    subwfb  PARAM2_H, W, A
+    movwf   DELTA_H, A
+    
+    movff   DELTA_L, MATH_TEMP_0
+    movff   DELTA_H, MATH_TEMP_1
+    call    Convert_Delta_To_Steps
+    call    Step_Shoulder_Signed
+    
+    movff   PARAM2_L, CURR_ANGLE2_L
+    movff   PARAM2_H, CURR_ANGLE2_H
     
 Angle_Elbow:
     ; --- Elbow Motor (PARAM3) ---
-    ; steps = angle_tenths * 96 / 185
-    movff   PARAM3_L, MATH_TEMP_0
-    movff   PARAM3_H, MATH_TEMP_1
-    movlw   RATIO_ELBOW_NUM
-    movwf   MATH_TEMP_2, A
-    movlw   RATIO_ELBOW_DEN
-    movwf   MATH_TEMP_3, A
-    call    Convert_Angle_To_Steps
-    call    Step_Elbow_16bit
+    movf    CURR_ANGLE3_L, W, A
+    subwf   PARAM3_L, W, A
+    movwf   DELTA_L, A
+    movf    CURR_ANGLE3_H, W, A
+    subwfb  PARAM3_H, W, A
+    movwf   DELTA_H, A
+    
+    movff   DELTA_L, MATH_TEMP_0
+    movff   DELTA_H, MATH_TEMP_1
+    call    Convert_Delta_To_Steps
+    call    Step_Elbow_Signed
+    
+    movff   PARAM3_L, CURR_ANGLE3_L
+    movff   PARAM3_H, CURR_ANGLE3_H
     
 Angle_Wrist:
     ; --- Wrist Motor (PARAM4) ---
-    ; steps = angle_tenths * 96 / 185
-    movff   PARAM4_L, MATH_TEMP_0
-    movff   PARAM4_H, MATH_TEMP_1
-    movlw   RATIO_WRIST_NUM
-    movwf   MATH_TEMP_2, A
-    movlw   RATIO_WRIST_DEN
-    movwf   MATH_TEMP_3, A
-    call    Convert_Angle_To_Steps
-    call    Step_Wrist_16bit
+    movf    CURR_ANGLE4_L, W, A
+    subwf   PARAM4_L, W, A
+    movwf   DELTA_L, A
+    movf    CURR_ANGLE4_H, W, A
+    subwfb  PARAM4_H, W, A
+    movwf   DELTA_H, A
+    
+    movff   DELTA_L, MATH_TEMP_0
+    movff   DELTA_H, MATH_TEMP_1
+    call    Convert_Delta_To_Steps
+    call    Step_Wrist_Signed
+    
+    movff   PARAM4_L, CURR_ANGLE4_L
+    movff   PARAM4_H, CURR_ANGLE4_H
     
 Angle_Hold_Motors:
     call    WritePortD
@@ -749,35 +798,114 @@ Angle_Hold_Motors:
     goto    Execute_Done
 
 ; ==============================================================================
-; 16-bit Step Helpers - Handle step counts > 255 by looping
+; Convert signed delta (tenths) to signed steps
 ; ==============================================================================
-; Input: STEPS_RESULT_L:STEPS_RESULT_H = 16-bit step count
+; Input: MATH_TEMP_0:MATH_TEMP_1 = signed delta in tenths
+; Output: STEPS_RESULT_L:STEPS_RESULT_H = signed step count
+; Uses ratio 96/185 (same for all joints currently)
+Convert_Delta_To_Steps:
+    ; Check if delta is zero
+    movf    MATH_TEMP_0, W, A
+    iorwf   MATH_TEMP_1, W, A
+    bz      Delta_Zero
+    
+    ; Check sign and save it
+    clrf    PARSE_SIGN, A           ; 0 = positive
+    btfss   MATH_TEMP_1, 7, A       ; Check sign bit
+    bra     Delta_Positive
+    
+    ; Negative - negate to get absolute value
+    movlw   1
+    movwf   PARSE_SIGN, A           ; Remember it was negative
+    comf    MATH_TEMP_0, F, A
+    comf    MATH_TEMP_1, F, A
+    incf    MATH_TEMP_0, F, A
+    movlw   0
+    addwfc  MATH_TEMP_1, F, A
+    
+Delta_Positive:
+    ; Convert absolute delta to steps using ratio 96/185
+    movlw   RATIO_BASE_NUM          ; Numerator = 96
+    movwf   MATH_TEMP_2, A
+    movlw   RATIO_BASE_DEN          ; Denominator = 185
+    movwf   MATH_TEMP_3, A
+    call    Convert_Angle_To_Steps  ; Result in STEPS_RESULT (unsigned)
+    
+    ; Restore sign if it was negative
+    movf    PARSE_SIGN, W, A
+    bz      Delta_Conv_Done
+    
+    ; Negate the result
+    comf    STEPS_RESULT_L, F, A
+    comf    STEPS_RESULT_H, F, A
+    incf    STEPS_RESULT_L, F, A
+    movlw   0
+    addwfc  STEPS_RESULT_H, F, A
+    bra     Delta_Conv_Done
+    
+Delta_Zero:
+    clrf    STEPS_RESULT_L, A
+    clrf    STEPS_RESULT_H, A
+    
+Delta_Conv_Done:
+    return
+
+; ==============================================================================
+; Signed 16-bit Step Helpers - Handle signed step deltas with reversed directions
+; ==============================================================================
+; Input: STEPS_RESULT_L:STEPS_RESULT_H = signed 16-bit step count (delta)
+; Positive delta -> move BACKWARD (direction reversed per user request)
+; Negative delta -> move FORWARD (direction reversed per user request)
 ; These call the motor function in chunks of 255 steps max
 
-Step_Base_16bit:
-    ; Check if zero steps total
+Step_Base_Signed:
+    ; Check if zero steps
     movf    STEPS_RESULT_L, W, A
     iorwf   STEPS_RESULT_H, W, A
     bz      Step_Base_Done
     
-Step_Base_Loop:
-    ; Check high byte - if non-zero, do 255 steps
+    ; Check sign bit (bit 7 of high byte)
+    btfsc   STEPS_RESULT_H, 7, A
+    bra     Step_Base_Negative
+    
+    ; Positive delta -> move BACKWARD (reversed direction)
+Step_Base_Pos_Loop:
     movf    STEPS_RESULT_H, W, A
-    bz      Step_Base_Remainder
-    
-    ; Do 255 steps
+    bz      Step_Base_Pos_Remainder
     movlw   255
-    call    Base_StepsForward
-    
-    ; Subtract 255 from 16-bit count
+    call    Base_StepsBackward
     movlw   255
     subwf   STEPS_RESULT_L, F, A
     movlw   0
     subwfb  STEPS_RESULT_H, F, A
-    bra     Step_Base_Loop
+    bra     Step_Base_Pos_Loop
     
-Step_Base_Remainder:
-    ; Do remaining steps (low byte only, high is 0)
+Step_Base_Pos_Remainder:
+    movf    STEPS_RESULT_L, W, A
+    bz      Step_Base_Done
+    call    Base_StepsBackward
+    bra     Step_Base_Done
+    
+Step_Base_Negative:
+    ; Negative delta -> negate to get absolute value, then move FORWARD
+    comf    STEPS_RESULT_L, F, A
+    comf    STEPS_RESULT_H, F, A
+    incf    STEPS_RESULT_L, F, A
+    movlw   0
+    addwfc  STEPS_RESULT_H, F, A
+    
+Step_Base_Neg_Loop:
+    movf    STEPS_RESULT_H, W, A
+    bz      Step_Base_Neg_Remainder
+    movlw   255
+    call    Base_StepsForward
+    movlw   255
+    subwf   STEPS_RESULT_L, F, A
+    movlw   0
+    subwfb  STEPS_RESULT_H, F, A
+    bra     Step_Base_Neg_Loop
+    
+Step_Base_Neg_Remainder:
     movf    STEPS_RESULT_L, W, A
     bz      Step_Base_Done
     call    Base_StepsForward
@@ -785,23 +913,51 @@ Step_Base_Remainder:
 Step_Base_Done:
     return
 
-Step_Shoulder_16bit:
+Step_Shoulder_Signed:
     movf    STEPS_RESULT_L, W, A
     iorwf   STEPS_RESULT_H, W, A
     bz      Step_Shoulder_Done
     
-Step_Shoulder_Loop:
+    btfsc   STEPS_RESULT_H, 7, A
+    bra     Step_Shoulder_Negative
+    
+    ; Positive delta -> move BACKWARD
+Step_Shoulder_Pos_Loop:
     movf    STEPS_RESULT_H, W, A
-    bz      Step_Shoulder_Remainder
+    bz      Step_Shoulder_Pos_Remainder
+    movlw   255
+    call    Shoulder_StepsBackward
+    movlw   255
+    subwf   STEPS_RESULT_L, F, A
+    movlw   0
+    subwfb  STEPS_RESULT_H, F, A
+    bra     Step_Shoulder_Pos_Loop
+    
+Step_Shoulder_Pos_Remainder:
+    movf    STEPS_RESULT_L, W, A
+    bz      Step_Shoulder_Done
+    call    Shoulder_StepsBackward
+    bra     Step_Shoulder_Done
+    
+Step_Shoulder_Negative:
+    comf    STEPS_RESULT_L, F, A
+    comf    STEPS_RESULT_H, F, A
+    incf    STEPS_RESULT_L, F, A
+    movlw   0
+    addwfc  STEPS_RESULT_H, F, A
+    
+Step_Shoulder_Neg_Loop:
+    movf    STEPS_RESULT_H, W, A
+    bz      Step_Shoulder_Neg_Remainder
     movlw   255
     call    Shoulder_StepsForward
     movlw   255
     subwf   STEPS_RESULT_L, F, A
     movlw   0
     subwfb  STEPS_RESULT_H, F, A
-    bra     Step_Shoulder_Loop
+    bra     Step_Shoulder_Neg_Loop
     
-Step_Shoulder_Remainder:
+Step_Shoulder_Neg_Remainder:
     movf    STEPS_RESULT_L, W, A
     bz      Step_Shoulder_Done
     call    Shoulder_StepsForward
@@ -809,23 +965,51 @@ Step_Shoulder_Remainder:
 Step_Shoulder_Done:
     return
 
-Step_Elbow_16bit:
+Step_Elbow_Signed:
     movf    STEPS_RESULT_L, W, A
     iorwf   STEPS_RESULT_H, W, A
     bz      Step_Elbow_Done
     
-Step_Elbow_Loop:
+    btfsc   STEPS_RESULT_H, 7, A
+    bra     Step_Elbow_Negative
+    
+    ; Positive delta -> move BACKWARD
+Step_Elbow_Pos_Loop:
     movf    STEPS_RESULT_H, W, A
-    bz      Step_Elbow_Remainder
+    bz      Step_Elbow_Pos_Remainder
+    movlw   255
+    call    Elbow_StepsBackward
+    movlw   255
+    subwf   STEPS_RESULT_L, F, A
+    movlw   0
+    subwfb  STEPS_RESULT_H, F, A
+    bra     Step_Elbow_Pos_Loop
+    
+Step_Elbow_Pos_Remainder:
+    movf    STEPS_RESULT_L, W, A
+    bz      Step_Elbow_Done
+    call    Elbow_StepsBackward
+    bra     Step_Elbow_Done
+    
+Step_Elbow_Negative:
+    comf    STEPS_RESULT_L, F, A
+    comf    STEPS_RESULT_H, F, A
+    incf    STEPS_RESULT_L, F, A
+    movlw   0
+    addwfc  STEPS_RESULT_H, F, A
+    
+Step_Elbow_Neg_Loop:
+    movf    STEPS_RESULT_H, W, A
+    bz      Step_Elbow_Neg_Remainder
     movlw   255
     call    Elbow_StepsForward
     movlw   255
     subwf   STEPS_RESULT_L, F, A
     movlw   0
     subwfb  STEPS_RESULT_H, F, A
-    bra     Step_Elbow_Loop
+    bra     Step_Elbow_Neg_Loop
     
-Step_Elbow_Remainder:
+Step_Elbow_Neg_Remainder:
     movf    STEPS_RESULT_L, W, A
     bz      Step_Elbow_Done
     call    Elbow_StepsForward
@@ -833,23 +1017,51 @@ Step_Elbow_Remainder:
 Step_Elbow_Done:
     return
 
-Step_Wrist_16bit:
+Step_Wrist_Signed:
     movf    STEPS_RESULT_L, W, A
     iorwf   STEPS_RESULT_H, W, A
     bz      Step_Wrist_Done
     
-Step_Wrist_Loop:
+    btfsc   STEPS_RESULT_H, 7, A
+    bra     Step_Wrist_Negative
+    
+    ; Positive delta -> move BACKWARD
+Step_Wrist_Pos_Loop:
     movf    STEPS_RESULT_H, W, A
-    bz      Step_Wrist_Remainder
+    bz      Step_Wrist_Pos_Remainder
+    movlw   255
+    call    Wrist_StepsBackward
+    movlw   255
+    subwf   STEPS_RESULT_L, F, A
+    movlw   0
+    subwfb  STEPS_RESULT_H, F, A
+    bra     Step_Wrist_Pos_Loop
+    
+Step_Wrist_Pos_Remainder:
+    movf    STEPS_RESULT_L, W, A
+    bz      Step_Wrist_Done
+    call    Wrist_StepsBackward
+    bra     Step_Wrist_Done
+    
+Step_Wrist_Negative:
+    comf    STEPS_RESULT_L, F, A
+    comf    STEPS_RESULT_H, F, A
+    incf    STEPS_RESULT_L, F, A
+    movlw   0
+    addwfc  STEPS_RESULT_H, F, A
+    
+Step_Wrist_Neg_Loop:
+    movf    STEPS_RESULT_H, W, A
+    bz      Step_Wrist_Neg_Remainder
     movlw   255
     call    Wrist_StepsForward
     movlw   255
     subwf   STEPS_RESULT_L, F, A
     movlw   0
     subwfb  STEPS_RESULT_H, F, A
-    bra     Step_Wrist_Loop
+    bra     Step_Wrist_Neg_Loop
     
-Step_Wrist_Remainder:
+Step_Wrist_Neg_Remainder:
     movf    STEPS_RESULT_L, W, A
     bz      Step_Wrist_Done
     call    Wrist_StepsForward
@@ -1057,6 +1269,11 @@ UART_Send_OK:
     call    UART_TX_Byte_Fast
     movlw   0x0A            ; '\n'
     call    UART_TX_Byte_Fast
+    ; Wait for transmission to fully complete (TSR empty)
+    ; This prevents returning before bytes are actually on the wire
+UART_Flush_Wait:
+    btfss   TXSTA1, 1, A    ; TRMT bit: 1 = TSR empty (transmission complete)
+    bra     UART_Flush_Wait
     return
 
 UART_Send_Error:
@@ -1068,6 +1285,10 @@ UART_Send_Error:
     call    UART_TX_Byte_Fast
     movlw   0x0A
     call    UART_TX_Byte_Fast
+    ; Wait for transmission to complete
+UART_Flush_Wait_Err:
+    btfss   TXSTA1, 1, A    ; TRMT bit
+    bra     UART_Flush_Wait_Err
     return
 
 UART_Send_Status:
