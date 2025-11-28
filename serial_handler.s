@@ -977,9 +977,12 @@ Div_Main_Loop:
     rlcf    STEPS_RESULT_H, F, A
     
     ; Shift dividend left, MSB into remainder
+    ; After top loop, remaining bits are in 0x39:0x3A (0x3B is zeros)
+    ; Must shift all three to properly chain the carry
     bcf     STATUS, 0, A
     rlcf    0x3B, F, A
     rlcf    0x3A, F, A
+    rlcf    0x39, F, A              ; <-- THIS WAS MISSING! Critical bug fix
     rlcf    0x3C, F, A              ; Carry into remainder
     
     ; Try to subtract divisor from remainder
