@@ -692,6 +692,7 @@ Execute_Status:
 ; ==============================================================================
 ; PARAM1 = base angle (tenths), PARAM2 = shoulder, PARAM3 = elbow, PARAM4 = wrist
 ; Each angle is converted to steps using the gear ratios
+; Step counts can exceed 255, so we loop calling the motor function
 Execute_Angle:
     ; --- Base Motor (PARAM1) ---
     ; steps = angle_tenths * 96 / 185
@@ -702,10 +703,8 @@ Execute_Angle:
     movlw   RATIO_BASE_DEN          ; Denominator = 185
     movwf   MATH_TEMP_3, A
     call    Convert_Angle_To_Steps
-    ; Result in STEPS_RESULT_L (only need low byte for reasonable angles)
-    movf    STEPS_RESULT_L, W, A
-    bz      Angle_Shoulder          ; Skip if zero steps
-    call    Base_StepsForward
+    ; Result in STEPS_RESULT_L:STEPS_RESULT_H (16-bit)
+    call    Step_Base_16bit
     
 Angle_Shoulder:
     ; --- Shoulder Motor (PARAM2) ---
@@ -717,9 +716,7 @@ Angle_Shoulder:
     movlw   RATIO_SHOULDER_DEN      ; Denominator = 185
     movwf   MATH_TEMP_3, A
     call    Convert_Angle_To_Steps
-    movf    STEPS_RESULT_L, W, A
-    bz      Angle_Elbow
-    call    Shoulder_StepsForward
+    call    Step_Shoulder_16bit
     
 Angle_Elbow:
     ; --- Elbow Motor (PARAM3) ---
@@ -731,9 +728,7 @@ Angle_Elbow:
     movlw   RATIO_ELBOW_DEN
     movwf   MATH_TEMP_3, A
     call    Convert_Angle_To_Steps
-    movf    STEPS_RESULT_L, W, A
-    bz      Angle_Wrist
-    call    Elbow_StepsForward
+    call    Step_Elbow_16bit
     
 Angle_Wrist:
     ; --- Wrist Motor (PARAM4) ---
@@ -745,15 +740,122 @@ Angle_Wrist:
     movlw   RATIO_WRIST_DEN
     movwf   MATH_TEMP_3, A
     call    Convert_Angle_To_Steps
-    movf    STEPS_RESULT_L, W, A
-    bz      Angle_Hold_Motors
-    call    Wrist_StepsForward
+    call    Step_Wrist_16bit
     
 Angle_Hold_Motors:
     call    WritePortD
     call    WritePortE
     call    WritePortH
     goto    Execute_Done
+
+; ==============================================================================
+; 16-bit Step Helpers - Handle step counts > 255 by looping
+; ==============================================================================
+; Input: STEPS_RESULT_L:STEPS_RESULT_H = 16-bit step count
+; These call the motor function in chunks of 255 steps max
+
+Step_Base_16bit:
+    ; Check if zero steps total
+    movf    STEPS_RESULT_L, W, A
+    iorwf   STEPS_RESULT_H, W, A
+    bz      Step_Base_Done
+    
+Step_Base_Loop:
+    ; Check high byte - if non-zero, do 255 steps
+    movf    STEPS_RESULT_H, W, A
+    bz      Step_Base_Remainder
+    
+    ; Do 255 steps
+    movlw   255
+    call    Base_StepsForward
+    
+    ; Subtract 255 from 16-bit count
+    movlw   255
+    subwf   STEPS_RESULT_L, F, A
+    movlw   0
+    subwfb  STEPS_RESULT_H, F, A
+    bra     Step_Base_Loop
+    
+Step_Base_Remainder:
+    ; Do remaining steps (low byte only, high is 0)
+    movf    STEPS_RESULT_L, W, A
+    bz      Step_Base_Done
+    call    Base_StepsForward
+    
+Step_Base_Done:
+    return
+
+Step_Shoulder_16bit:
+    movf    STEPS_RESULT_L, W, A
+    iorwf   STEPS_RESULT_H, W, A
+    bz      Step_Shoulder_Done
+    
+Step_Shoulder_Loop:
+    movf    STEPS_RESULT_H, W, A
+    bz      Step_Shoulder_Remainder
+    movlw   255
+    call    Shoulder_StepsForward
+    movlw   255
+    subwf   STEPS_RESULT_L, F, A
+    movlw   0
+    subwfb  STEPS_RESULT_H, F, A
+    bra     Step_Shoulder_Loop
+    
+Step_Shoulder_Remainder:
+    movf    STEPS_RESULT_L, W, A
+    bz      Step_Shoulder_Done
+    call    Shoulder_StepsForward
+    
+Step_Shoulder_Done:
+    return
+
+Step_Elbow_16bit:
+    movf    STEPS_RESULT_L, W, A
+    iorwf   STEPS_RESULT_H, W, A
+    bz      Step_Elbow_Done
+    
+Step_Elbow_Loop:
+    movf    STEPS_RESULT_H, W, A
+    bz      Step_Elbow_Remainder
+    movlw   255
+    call    Elbow_StepsForward
+    movlw   255
+    subwf   STEPS_RESULT_L, F, A
+    movlw   0
+    subwfb  STEPS_RESULT_H, F, A
+    bra     Step_Elbow_Loop
+    
+Step_Elbow_Remainder:
+    movf    STEPS_RESULT_L, W, A
+    bz      Step_Elbow_Done
+    call    Elbow_StepsForward
+    
+Step_Elbow_Done:
+    return
+
+Step_Wrist_16bit:
+    movf    STEPS_RESULT_L, W, A
+    iorwf   STEPS_RESULT_H, W, A
+    bz      Step_Wrist_Done
+    
+Step_Wrist_Loop:
+    movf    STEPS_RESULT_H, W, A
+    bz      Step_Wrist_Remainder
+    movlw   255
+    call    Wrist_StepsForward
+    movlw   255
+    subwf   STEPS_RESULT_L, F, A
+    movlw   0
+    subwfb  STEPS_RESULT_H, F, A
+    bra     Step_Wrist_Loop
+    
+Step_Wrist_Remainder:
+    movf    STEPS_RESULT_L, W, A
+    bz      Step_Wrist_Done
+    call    Wrist_StepsForward
+    
+Step_Wrist_Done:
+    return
 
 ; ==============================================================================
 ; Execute CLAW Command - Move claw motor by signed step count
@@ -792,9 +894,7 @@ Claw_Done:
 ;   STEPS_RESULT_L:STEPS_RESULT_H = steps (16-bit)
 ;
 ; Formula: steps = (angle_tenths * numerator) / denominator
-; For simplicity, we do: multiply, then divide
-; Since angle max = 3600, numerator max = 96:
-;   max product = 3600 * 96 = 345,600 (needs 19 bits... we'll use 24-bit intermediate)
+; Uses hardware multiply and binary long division (24 iterations max)
 ; ==============================================================================
 Convert_Angle_To_Steps:
     ; Multiply angle_tenths (16-bit) by numerator (8-bit)
@@ -820,51 +920,82 @@ Convert_Angle_To_Steps:
     movf    PRODH, W, A
     addwfc  0x39, F, A
     
-    ; Now divide 24-bit product by 8-bit denominator
-    ; Simple repeated subtraction division (for small divisors like 75, 185)
-    ; Result in STEPS_RESULT
+    ; Now divide 24-bit product by 8-bit denominator using binary long division
+    ; This runs in exactly 24 iterations (one per bit)
+    ; Dividend: 0x39:0x3A:0x3B (24-bit)
+    ; Divisor: MATH_TEMP_3 (8-bit)
+    ; Quotient: STEPS_RESULT_L:STEPS_RESULT_H (16-bit)
+    ; Remainder: 0x3C (8-bit is enough for 8-bit divisor)
     
     clrf    STEPS_RESULT_L, A
     clrf    STEPS_RESULT_H, A
+    clrf    0x3C, A                 ; Remainder
     
     ; Check if denominator is 0 (shouldn't happen)
     movf    MATH_TEMP_3, W, A
     bz      Convert_Done
     
-Divide_Loop:
-    ; Check if product >= denominator
-    ; Compare 24-bit product with 8-bit denominator (extended to 24-bit)
-    ; If product high bytes are non-zero, definitely >= denominator
-    movf    0x39, W, A
-    bnz     Divide_Subtract
-    movf    0x3A, W, A
-    bnz     Divide_Subtract
+    ; We only need 16 bits of quotient, so we can skip the top 8 bits
+    ; and just process the lower 16 bits of the dividend for the quotient
+    ; But the top 8 bits still contribute to the remainder
     
-    ; Only low byte remains - direct compare
-    movf    MATH_TEMP_3, W, A       ; denominator
-    subwf   0x3B, W, A              ; low - denom (don't store)
-    btfss   STATUS, 0, A            ; C=0 if low < denom
-    bra     Convert_Done            ; Done - remainder < divisor
+    ; Process top 8 bits (0x39) into remainder only (no quotient bits)
+    movlw   8
+    movwf   0x3D, A                 ; Bit counter for top byte
     
-Divide_Subtract:
-    ; Subtract denominator from product
+Div_Top_Loop:
+    ; Shift dividend left, MSB into remainder
+    bcf     STATUS, 0, A
+    rlcf    0x3B, F, A
+    rlcf    0x3A, F, A
+    rlcf    0x39, F, A
+    rlcf    0x3C, F, A              ; Carry into remainder
+    
+    ; Try to subtract divisor from remainder
     movf    MATH_TEMP_3, W, A
-    subwf   0x3B, F, A
-    movlw   0
-    subwfb  0x3A, F, A
-    subwfb  0x39, F, A
+    subwf   0x3C, W, A              ; remainder - divisor (don't store yet)
+    btfss   STATUS, 0, A            ; C=1 if remainder >= divisor
+    bra     Div_Top_Skip
     
-    ; Increment result
-    incf    STEPS_RESULT_L, F, A
-    btfsc   STATUS, 2, A            ; Check for overflow to high byte
-    incf    STEPS_RESULT_H, F, A
+    ; Remainder >= divisor, do the subtraction
+    movf    MATH_TEMP_3, W, A
+    subwf   0x3C, F, A
+    ; (No quotient bit for top 8 iterations)
     
-    ; Check for result overflow (shouldn't happen with valid inputs)
-    movf    STEPS_RESULT_H, W, A
-    andlw   0xF0                    ; Check if > 4095 steps
-    bnz     Convert_Done            ; Overflow protection
+Div_Top_Skip:
+    decfsz  0x3D, F, A
+    bra     Div_Top_Loop
     
-    bra     Divide_Loop
+    ; Process next 16 bits for quotient
+    movlw   16
+    movwf   0x3D, A                 ; Bit counter
+    
+Div_Main_Loop:
+    ; Shift quotient left (make room for new bit)
+    bcf     STATUS, 0, A
+    rlcf    STEPS_RESULT_L, F, A
+    rlcf    STEPS_RESULT_H, F, A
+    
+    ; Shift dividend left, MSB into remainder
+    bcf     STATUS, 0, A
+    rlcf    0x3B, F, A
+    rlcf    0x3A, F, A
+    rlcf    0x3C, F, A              ; Carry into remainder
+    
+    ; Try to subtract divisor from remainder
+    movf    MATH_TEMP_3, W, A
+    subwf   0x3C, W, A              ; remainder - divisor (don't store yet)
+    btfss   STATUS, 0, A            ; C=1 if remainder >= divisor
+    bra     Div_Main_Skip
+    
+    ; Remainder >= divisor, do the subtraction and set quotient bit
+    movf    MATH_TEMP_3, W, A
+    subwf   0x3C, F, A
+    bsf     STEPS_RESULT_L, 0, A    ; Set LSB of quotient
+    
+Div_Main_Skip:
+    decfsz  0x3D, F, A
+    bra     Div_Main_Loop
     
 Convert_Done:
     return
