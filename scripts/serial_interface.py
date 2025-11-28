@@ -227,8 +227,77 @@ class SerialInterface:
         command = f"STEP {steps['base']} {steps['shoulder']} {steps['elbow']} {steps['wrist']}"
         
         if wait_completion:
-            response = self.send_command(command, wait_for_response=True)
-            return response == "OK"
+            # Increase timeout for long movements (200+ steps can take 10+ seconds)
+            response = self.send_command(command, wait_for_response=True, timeout=30.0)
+            # Handle response robustly - check for OK anywhere in response
+            if response:
+                return "OK" in response.upper()
+            return False
+        else:
+            self.send_command(command)
+            return True
+    
+    def send_angles(self, angles: Dict[str, float], 
+                   wait_completion: bool = False) -> bool:
+        """
+        Send ANGLE command with absolute joint angles.
+        
+        Angles are converted to tenths of degrees (0.1 deg precision) and sent
+        as unsigned 16-bit integers (0-3600 representing 0.0-360.0 degrees).
+        The MCU converts these to motor steps using hard-coded gear ratios.
+        
+        Args:
+            angles: Dictionary with keys 'base', 'shoulder', 'elbow', 'wrist' (degrees)
+            wait_completion: Wait for "OK" response
+            
+        Returns:
+            True if command sent successfully (and OK received if waiting)
+        """
+        # Convert angles to tenths of degrees (0.1 deg precision)
+        # Clamp to valid range 0-3600 (0.0 to 360.0 degrees)
+        def to_tenths(angle: float) -> int:
+            tenths = int(round(angle * 10))
+            return max(0, min(3600, tenths))
+        
+        theta1 = to_tenths(angles['base'])
+        theta2 = to_tenths(angles['shoulder'])
+        theta3 = to_tenths(angles['elbow'])
+        theta4 = to_tenths(angles['wrist'])
+        
+        # Format: ANGLE <θ1*10> <θ2*10> <θ3*10> <θ4*10>
+        command = f"ANGLE {theta1} {theta2} {theta3} {theta4}"
+        
+        if wait_completion:
+            response = self.send_command(command, wait_for_response=True, timeout=30.0)
+            if response:
+                return "OK" in response.upper()
+            return False
+        else:
+            self.send_command(command)
+            return True
+    
+    def move_claw(self, steps: int, wait_completion: bool = False) -> bool:
+        """
+        Send CLAW command to move the claw motor.
+        
+        Args:
+            steps: Number of steps to move (signed 8-bit: -128 to +127)
+                   Positive = open/forward, Negative = close/backward
+            wait_completion: Wait for "OK" response
+            
+        Returns:
+            True if command sent successfully
+        """
+        # Clamp to signed 8-bit range
+        steps = max(-128, min(127, int(steps)))
+        
+        command = f"CLAW {steps}"
+        
+        if wait_completion:
+            response = self.send_command(command, wait_for_response=True, timeout=10.0)
+            if response:
+                return "OK" in response.upper()
+            return False
         else:
             self.send_command(command)
             return True
@@ -453,6 +522,25 @@ class MockSerialInterface(SerialInterface):
         
         elif cmd == "CAL":
             time.sleep(0.2)
+            return "OK" if wait_for_response else None
+        
+        elif cmd == "ANGLE" and len(parts) == 5:
+            # Update mock state from angle tenths (convert back to degrees)
+            self.current_angles = {
+                'base': float(parts[1]) / 10.0,
+                'shoulder': float(parts[2]) / 10.0,
+                'elbow': float(parts[3]) / 10.0,
+                'wrist': float(parts[4]) / 10.0
+            }
+            time.sleep(0.2)  # Simulate movement delay
+            return "OK" if wait_for_response else None
+        
+        elif cmd == "CLAW" and len(parts) == 2:
+            # Simulate claw movement
+            claw_steps = int(parts[1])
+            if self.debug:
+                print(f"Mock: Claw moving {claw_steps} steps")
+            time.sleep(0.1)  # Simulate movement delay
             return "OK" if wait_for_response else None
         
         return "ERROR" if wait_for_response else None

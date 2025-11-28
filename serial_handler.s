@@ -4,7 +4,9 @@
 ; Receives commands from Python control software via UART
 ; Protocol:
 ;   MOVE <theta1> <theta2> <theta3> <theta4>  - Move to joint angles (degrees) - TODO
-;   STEP <base> <shoulder> <elbow> <wrist>    - Move by step counts
+;   STEP <base> <shoulder> <elbow> <wrist>    - Move by step counts (signed 8-bit)
+;   ANGLE <θ1> <θ2> <θ3> <θ4>                 - Move to absolute angles (tenths of degrees, 0-3600)
+;   CLAW <steps>                               - Move claw motor (signed 8-bit steps)
 ;   HOME                                       - Move to home position - TODO
 ;   STOP                                       - Emergency stop - TODO
 ;   STATUS                                     - Report current angles - TODO
@@ -15,6 +17,11 @@
 ;   OK        - Command completed successfully
 ;   ERROR     - Command failed
 ;   STATUS <theta1> <theta2> <theta3> <theta4>  - Current joint angles
+;
+; Coupling Notes (for future IK implementation):
+;   - Shoulder-Elbow: scissor mechanism, ratio -1:1 (elbow moves opposite to shoulder)
+;   - Wrist-Shoulder: same direction, ratio 1:1 (wrist maintains orientation)
+;   - Currently sending raw angles; IK will compensate for coupling on Python side
 ; ==============================================================================
 
 #include <xc.inc>
@@ -70,6 +77,16 @@ PARSE_SIGN      EQU     0x2E
 ; Command execution flag (set by ISR, cleared by main loop after execution)
 CMD_READY       EQU     0x2F            ; 0 = no command, non-zero = command ready to execute
 
+; Additional temp vars for 16-bit parsing and math
+PARSE_TEMP_L    EQU     0x30            ; 16-bit parse result (low byte)
+PARSE_TEMP_H    EQU     0x31            ; 16-bit parse result (high byte)
+MATH_TEMP_0     EQU     0x32            ; Math temp registers for multiply/divide
+MATH_TEMP_1     EQU     0x33
+MATH_TEMP_2     EQU     0x34
+MATH_TEMP_3     EQU     0x35
+STEPS_RESULT_L  EQU     0x36            ; Step conversion result (low)
+STEPS_RESULT_H  EQU     0x37            ; Step conversion result (high)
+
 ; Command type codes
 CMD_NONE        EQU     0x00
 CMD_MOVE        EQU     0x01
@@ -79,6 +96,34 @@ CMD_STOP        EQU     0x04
 CMD_STATUS      EQU     0x05
 CMD_SPEED       EQU     0x06
 CMD_CAL         EQU     0x07
+CMD_ANGLE       EQU     0x08            ; ANGLE command (absolute angles in tenths)
+CMD_CLAW        EQU     0x09            ; CLAW command (signed 8-bit steps)
+
+; ==============================================================================
+; Gear Ratio Constants for Angle-to-Step Conversion
+; ==============================================================================
+; Angles are received as tenths of degrees (0-3600 = 0.0-360.0 deg)
+; Conversion: steps = angle_tenths * RATIO_NUM / RATIO_DEN
+;
+; Measured calibration data:
+;   Shoulder/Elbow: 96 steps = 18.5 degrees = 185 tenths
+;                   ratio = 96/185 steps per tenth
+;   Base/Wrist:     48 steps per revolution = 48/3600 steps per tenth = 1/75
+;
+; For integer math: steps = angle_tenths * numerator / denominator
+; ==============================================================================
+RATIO_BASE_NUM      EQU     1           ; Base: 1/75 steps per tenth
+RATIO_BASE_DEN      EQU     75
+RATIO_SHOULDER_NUM  EQU     96          ; Shoulder: 96/185 steps per tenth
+RATIO_SHOULDER_DEN  EQU     185
+RATIO_ELBOW_NUM     EQU     96          ; Elbow: 96/185 steps per tenth
+RATIO_ELBOW_DEN     EQU     185
+RATIO_WRIST_NUM     EQU     1           ; Wrist: 1/75 steps per tenth
+RATIO_WRIST_DEN     EQU     75
+
+; Coupling ratios (for future IK - currently unused)
+; COUPLING_SE_RATIO: Shoulder-Elbow = -1 (opposite directions)
+; COUPLING_WS_RATIO: Wrist-Shoulder = +1 (same direction)
 
 ; ==============================================================================
 ; UART Initialization
@@ -235,6 +280,16 @@ Execute_Pending_Command:
     btfsc   STATUS, 2, A
     goto    Execute_Status
     
+    movf    CMD_READY, W, A
+    xorlw   CMD_ANGLE
+    btfsc   STATUS, 2, A
+    goto    Execute_Angle
+    
+    movf    CMD_READY, W, A
+    xorlw   CMD_CLAW
+    btfsc   STATUS, 2, A
+    goto    Execute_Claw
+    
     ; Unknown command - send error
     call    UART_Send_Error
     goto    Exec_Clear_Flag
@@ -264,6 +319,16 @@ Parse_Command:
     sublw   'S'             ; Check 'S'
     btfsc   STATUS, 2, A
     goto    Parse_S_Cmd
+    
+    movf    INDF0, W, A
+    sublw   'A'             ; Check 'A' for ANGLE
+    btfsc   STATUS, 2, A
+    goto    Set_Cmd_Angle
+    
+    movf    INDF0, W, A
+    sublw   'C'             ; Check 'C' for CLAW
+    btfsc   STATUS, 2, A
+    goto    Set_Cmd_Claw
     
     clrf    CMD_TYPE, A     ; Unknown
     return
@@ -303,6 +368,98 @@ Set_Cmd_Home:
 Set_Cmd_Status:
     movlw   CMD_STATUS
     movwf   CMD_TYPE, A
+    return
+
+Set_Cmd_Angle:
+    ; Parse ANGLE parameters: ANGLE <θ1> <θ2> <θ3> <θ4> (16-bit unsigned, 0-3600)
+    movlw   CMD_ANGLE
+    movwf   CMD_TYPE, A
+    
+    ; Advance FSR0 past "ANGLE" (A-N-G-L-E = 5 chars)
+    movf    POSTINC0, W, A  ; Skip 'A'
+    movf    POSTINC0, W, A  ; Skip 'N'
+    movf    POSTINC0, W, A  ; Skip 'G'
+    movf    POSTINC0, W, A  ; Skip 'L'
+    movf    POSTINC0, W, A  ; Skip 'E'
+    
+    ; Skip spaces before first param
+Angle_Skip_Spaces_1:
+    movf    INDF0, W, A
+    sublw   ' '
+    btfss   STATUS, 2, A
+    bra     Angle_Parse_P1
+    movf    POSTINC0, W, A
+    bra     Angle_Skip_Spaces_1
+
+Angle_Parse_P1:
+    call    Parse_Integer_16
+    movff   PARSE_TEMP_L, PARAM1_L
+    movff   PARSE_TEMP_H, PARAM1_H
+    
+Angle_Skip_Spaces_2:
+    movf    INDF0, W, A
+    sublw   ' '
+    btfss   STATUS, 2, A
+    bra     Angle_Parse_P2
+    movf    POSTINC0, W, A
+    bra     Angle_Skip_Spaces_2
+
+Angle_Parse_P2:
+    call    Parse_Integer_16
+    movff   PARSE_TEMP_L, PARAM2_L
+    movff   PARSE_TEMP_H, PARAM2_H
+    
+Angle_Skip_Spaces_3:
+    movf    INDF0, W, A
+    sublw   ' '
+    btfss   STATUS, 2, A
+    bra     Angle_Parse_P3
+    movf    POSTINC0, W, A
+    bra     Angle_Skip_Spaces_3
+
+Angle_Parse_P3:
+    call    Parse_Integer_16
+    movff   PARSE_TEMP_L, PARAM3_L
+    movff   PARSE_TEMP_H, PARAM3_H
+    
+Angle_Skip_Spaces_4:
+    movf    INDF0, W, A
+    sublw   ' '
+    btfss   STATUS, 2, A
+    bra     Angle_Parse_P4
+    movf    POSTINC0, W, A
+    bra     Angle_Skip_Spaces_4
+
+Angle_Parse_P4:
+    call    Parse_Integer_16
+    movff   PARSE_TEMP_L, PARAM4_L
+    movff   PARSE_TEMP_H, PARAM4_H
+    return
+
+Set_Cmd_Claw:
+    ; Parse CLAW parameter: CLAW <steps> (signed 8-bit)
+    movlw   CMD_CLAW
+    movwf   CMD_TYPE, A
+    
+    ; Advance FSR0 past "CLAW" (C-L-A-W = 4 chars)
+    movf    POSTINC0, W, A  ; Skip 'C'
+    movf    POSTINC0, W, A  ; Skip 'L'
+    movf    POSTINC0, W, A  ; Skip 'A'
+    movf    POSTINC0, W, A  ; Skip 'W'
+    
+    ; Skip spaces
+Claw_Skip_Spaces:
+    movf    INDF0, W, A
+    sublw   ' '
+    btfss   STATUS, 2, A
+    bra     Claw_Parse_Param
+    movf    POSTINC0, W, A
+    bra     Claw_Skip_Spaces
+
+Claw_Parse_Param:
+    call    Parse_Integer           ; Use 8-bit signed parse
+    movff   PARSE_TEMP, PARAM1_L    ; Store in PARAM1
+    clrf    PARAM1_H, A
     return
 
 Set_Cmd_Step:
@@ -446,6 +603,81 @@ Parse_End:
     return
 
 ; ==============================================================================
+; Parse 16-bit Unsigned Integer (ASCII -> 16-bit Value)
+; ==============================================================================
+; Inputs: FSR0 points to string
+; Outputs: PARSE_TEMP_L, PARSE_TEMP_H (16-bit unsigned value), FSR0 updated
+; Trashes: W, STATUS, MATH_TEMP_0-3
+; Max value: 65535 (but we expect 0-3600 for angles)
+Parse_Integer_16:
+    clrf    PARSE_TEMP_L, A
+    clrf    PARSE_TEMP_H, A
+    
+Parse_16_Digit_Loop:
+    movf    INDF0, W, A
+    
+    ; Check if digit (0-9)
+    addlw   -0x30           ; W = char - '0'
+    btfss   STATUS, 0, A    ; C=0 if char < '0' (not a digit)
+    bra     Parse_16_End
+    
+    ; Check upper bound
+    sublw   9               ; W = 9 - (char - '0')
+    btfss   STATUS, 0, A    ; C=0 if digit > 9
+    bra     Parse_16_End
+    
+    ; Valid digit - get its value
+    movf    INDF0, W, A
+    addlw   -0x30           ; W = digit value (0-9)
+    movwf   MATH_TEMP_0, A  ; Save digit
+    
+    ; Multiply current result by 10: result = result * 10
+    ; result * 10 = result * 8 + result * 2
+    
+    ; First, save original result
+    movff   PARSE_TEMP_L, MATH_TEMP_1
+    movff   PARSE_TEMP_H, MATH_TEMP_2
+    
+    ; result * 2
+    bcf     STATUS, 0, A
+    rlcf    PARSE_TEMP_L, F, A
+    rlcf    PARSE_TEMP_H, F, A
+    
+    ; Save result * 2
+    movff   PARSE_TEMP_L, MATH_TEMP_3
+    movf    PARSE_TEMP_H, W, A
+    movwf   0x38, A                     ; Use temp location for high byte of *2
+    
+    ; result * 4 (continue from *2)
+    bcf     STATUS, 0, A
+    rlcf    PARSE_TEMP_L, F, A
+    rlcf    PARSE_TEMP_H, F, A
+    
+    ; result * 8 (continue from *4)
+    bcf     STATUS, 0, A
+    rlcf    PARSE_TEMP_L, F, A
+    rlcf    PARSE_TEMP_H, F, A
+    
+    ; result = result * 8 + result * 2
+    movf    MATH_TEMP_3, W, A
+    addwf   PARSE_TEMP_L, F, A
+    movf    0x38, W, A
+    addwfc  PARSE_TEMP_H, F, A
+    
+    ; Add the new digit
+    movf    MATH_TEMP_0, W, A
+    addwf   PARSE_TEMP_L, F, A
+    movlw   0
+    addwfc  PARSE_TEMP_H, F, A
+    
+    ; Advance to next character
+    movf    POSTINC0, W, A
+    bra     Parse_16_Digit_Loop
+
+Parse_16_End:
+    return
+
+; ==============================================================================
 ; Command Executors
 ; ==============================================================================
 Execute_Home:
@@ -455,6 +687,188 @@ Execute_Home:
 Execute_Status:
     call    UART_Send_Status
     goto    Exec_Clear_Flag
+
+; ==============================================================================
+; Execute ANGLE Command - Convert angles (tenths) to steps and move motors
+; ==============================================================================
+; PARAM1 = base angle (tenths), PARAM2 = shoulder, PARAM3 = elbow, PARAM4 = wrist
+; Each angle is converted to steps using the gear ratios
+Execute_Angle:
+    ; --- Base Motor (PARAM1) ---
+    ; steps = angle_tenths * 1 / 75
+    movff   PARAM1_L, MATH_TEMP_0
+    movff   PARAM1_H, MATH_TEMP_1
+    movlw   RATIO_BASE_NUM          ; Numerator = 1
+    movwf   MATH_TEMP_2, A
+    movlw   RATIO_BASE_DEN          ; Denominator = 75
+    movwf   MATH_TEMP_3, A
+    call    Convert_Angle_To_Steps
+    ; Result in STEPS_RESULT_L (only need low byte for reasonable angles)
+    movf    STEPS_RESULT_L, W, A
+    bz      Angle_Shoulder          ; Skip if zero steps
+    call    Base_StepsForward
+    
+Angle_Shoulder:
+    ; --- Shoulder Motor (PARAM2) ---
+    ; steps = angle_tenths * 96 / 185
+    movff   PARAM2_L, MATH_TEMP_0
+    movff   PARAM2_H, MATH_TEMP_1
+    movlw   RATIO_SHOULDER_NUM      ; Numerator = 96
+    movwf   MATH_TEMP_2, A
+    movlw   RATIO_SHOULDER_DEN      ; Denominator = 185
+    movwf   MATH_TEMP_3, A
+    call    Convert_Angle_To_Steps
+    movf    STEPS_RESULT_L, W, A
+    bz      Angle_Elbow
+    call    Shoulder_StepsForward
+    
+Angle_Elbow:
+    ; --- Elbow Motor (PARAM3) ---
+    ; steps = angle_tenths * 96 / 185
+    movff   PARAM3_L, MATH_TEMP_0
+    movff   PARAM3_H, MATH_TEMP_1
+    movlw   RATIO_ELBOW_NUM
+    movwf   MATH_TEMP_2, A
+    movlw   RATIO_ELBOW_DEN
+    movwf   MATH_TEMP_3, A
+    call    Convert_Angle_To_Steps
+    movf    STEPS_RESULT_L, W, A
+    bz      Angle_Wrist
+    call    Elbow_StepsForward
+    
+Angle_Wrist:
+    ; --- Wrist Motor (PARAM4) ---
+    ; steps = angle_tenths * 1 / 75
+    movff   PARAM4_L, MATH_TEMP_0
+    movff   PARAM4_H, MATH_TEMP_1
+    movlw   RATIO_WRIST_NUM
+    movwf   MATH_TEMP_2, A
+    movlw   RATIO_WRIST_DEN
+    movwf   MATH_TEMP_3, A
+    call    Convert_Angle_To_Steps
+    movf    STEPS_RESULT_L, W, A
+    bz      Angle_Hold_Motors
+    call    Wrist_StepsForward
+    
+Angle_Hold_Motors:
+    call    WritePortD
+    call    WritePortE
+    call    WritePortH
+    goto    Execute_Done
+
+; ==============================================================================
+; Execute CLAW Command - Move claw motor by signed step count
+; ==============================================================================
+Execute_Claw:
+    movf    PARAM1_L, W, A
+    bz      Claw_Done               ; Skip if zero
+    btfsc   WREG, 7, A              ; Check sign bit
+    bra     Claw_Backward
+    
+    ; Positive - move forward
+    call    Claw_StepsForward
+    bra     Claw_Hold
+    
+Claw_Backward:
+    ; Negative - negate and move backward
+    movwf   PARSE_TEMP, A
+    negf    PARSE_TEMP, A
+    movf    PARSE_TEMP, W, A
+    call    Claw_StepsBackward
+    
+Claw_Hold:
+    call    WritePortD              ; Claw is on Port D
+    
+Claw_Done:
+    goto    Execute_Done
+
+; ==============================================================================
+; Convert Angle (tenths) to Steps using gear ratio
+; ==============================================================================
+; Inputs:
+;   MATH_TEMP_0:MATH_TEMP_1 = angle in tenths (16-bit)
+;   MATH_TEMP_2 = numerator (8-bit)
+;   MATH_TEMP_3 = denominator (8-bit)
+; Output:
+;   STEPS_RESULT_L:STEPS_RESULT_H = steps (16-bit)
+;
+; Formula: steps = (angle_tenths * numerator) / denominator
+; For simplicity, we do: multiply, then divide
+; Since angle max = 3600, numerator max = 96:
+;   max product = 3600 * 96 = 345,600 (needs 19 bits... we'll use 24-bit intermediate)
+; ==============================================================================
+Convert_Angle_To_Steps:
+    ; Multiply angle_tenths (16-bit) by numerator (8-bit)
+    ; Result is 24-bit in 0x39:0x3A:0x3B (high:mid:low)
+    
+    clrf    0x39, A                 ; High byte of product
+    clrf    0x3A, A                 ; Mid byte
+    clrf    0x3B, A                 ; Low byte
+    
+    ; 16x8 multiply: angle * numerator
+    ; Low byte * numerator
+    movf    MATH_TEMP_0, W, A       ; angle low
+    mulwf   MATH_TEMP_2, A          ; * numerator
+    movff   PRODL, 0x3B             ; Store low
+    movff   PRODH, 0x3A             ; Store mid
+    
+    ; High byte * numerator
+    movf    MATH_TEMP_1, W, A       ; angle high
+    mulwf   MATH_TEMP_2, A          ; * numerator
+    ; Add to mid and high bytes
+    movf    PRODL, W, A
+    addwf   0x3A, F, A
+    movf    PRODH, W, A
+    addwfc  0x39, F, A
+    
+    ; Now divide 24-bit product by 8-bit denominator
+    ; Simple repeated subtraction division (for small divisors like 75, 185)
+    ; Result in STEPS_RESULT
+    
+    clrf    STEPS_RESULT_L, A
+    clrf    STEPS_RESULT_H, A
+    
+    ; Check if denominator is 0 (shouldn't happen)
+    movf    MATH_TEMP_3, W, A
+    bz      Convert_Done
+    
+Divide_Loop:
+    ; Check if product >= denominator
+    ; Compare 24-bit product with 8-bit denominator (extended to 24-bit)
+    ; If product high bytes are non-zero, definitely >= denominator
+    movf    0x39, W, A
+    bnz     Divide_Subtract
+    movf    0x3A, W, A
+    bnz     Divide_Subtract
+    
+    ; Only low byte remains - direct compare
+    movf    MATH_TEMP_3, W, A       ; denominator
+    subwf   0x3B, W, A              ; low - denom (don't store)
+    btfss   STATUS, 0, A            ; C=0 if low < denom
+    bra     Convert_Done            ; Done - remainder < divisor
+    
+Divide_Subtract:
+    ; Subtract denominator from product
+    movf    MATH_TEMP_3, W, A
+    subwf   0x3B, F, A
+    movlw   0
+    subwfb  0x3A, F, A
+    subwfb  0x39, F, A
+    
+    ; Increment result
+    incf    STEPS_RESULT_L, F, A
+    btfsc   STATUS, 2, A            ; Check for overflow to high byte
+    incf    STEPS_RESULT_H, F, A
+    
+    ; Check for result overflow (shouldn't happen with valid inputs)
+    movf    STEPS_RESULT_H, W, A
+    andlw   0xF0                    ; Check if > 4095 steps
+    bnz     Convert_Done            ; Overflow protection
+    
+    bra     Divide_Loop
+    
+Convert_Done:
+    return
 
 Execute_Step:
     ; DEBUG: Echo back parsed parameters before execution

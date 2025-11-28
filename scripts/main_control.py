@@ -330,8 +330,10 @@ class RobotController:
         print("Interactive Mode")
         print("="*60)
         print("\nCommands:")
-        print("  move <rho> <phi> <z>  - Move to position")
+        print("  move <rho> <phi> <z>  - Move to position (IK)")
+        print("  angle <θ1> <θ2> <θ3> <θ4>  - Move to absolute joint angles (degrees)")
         print("  step <base> <shoulder> <elbow> <wrist>  - Move motors by step counts (raw steps)")
+        print("  claw <steps>          - Move claw motor (-128 to +127 steps)")
         print("  home                  - Return to home")
         print("  status                - Show current position")
         print("  test <name>           - Run test (point|circle|eight|boundary)")
@@ -397,6 +399,54 @@ class RobotController:
                             print("✓ Movement complete")
                         else:
                             print("✗ Movement failed")
+                    else:
+                        print("Not connected - command not sent")
+                
+                elif parts[0] == 'angle' and len(parts) >= 5:
+                    # Parse angle arguments (degrees with 0.1 precision)
+                    theta1 = float(parts[1])
+                    theta2 = float(parts[2])
+                    theta3 = float(parts[3])
+                    theta4 = float(parts[4])
+                    
+                    # Create angles dictionary
+                    angles = {
+                        'base': theta1,
+                        'shoulder': theta2,
+                        'elbow': theta3,
+                        'wrist': theta4
+                    }
+                    
+                    print(f"Angles: θ1={theta1:.1f}° θ2={theta2:.1f}° θ3={theta3:.1f}° θ4={theta4:.1f}°")
+                    
+                    # Send ANGLE command (MCU converts to steps using gear ratios)
+                    if self.connected:
+                        success = self.serial.send_angles(angles, wait_completion=True)
+                        if success:
+                            self.current_angles = angles
+                            print("✓ Movement complete")
+                        else:
+                            print("✗ Movement failed")
+                    else:
+                        print("Not connected - command not sent")
+                
+                elif parts[0] == 'claw' and len(parts) >= 2:
+                    # Parse claw steps (signed 8-bit: -128 to +127)
+                    claw_steps = int(parts[1])
+                    
+                    if claw_steps < -128 or claw_steps > 127:
+                        print("Error: claw steps must be between -128 and +127")
+                        continue
+                    
+                    print(f"Claw: {claw_steps} steps")
+                    
+                    # Send CLAW command
+                    if self.connected:
+                        success = self.serial.move_claw(claw_steps, wait_completion=True)
+                        if success:
+                            print("✓ Claw movement complete")
+                        else:
+                            print("✗ Claw movement failed")
                     else:
                         print("Not connected - command not sent")
                 
