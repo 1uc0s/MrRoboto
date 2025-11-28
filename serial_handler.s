@@ -894,7 +894,8 @@ Claw_Done:
 ;   STEPS_RESULT_L:STEPS_RESULT_H = steps (16-bit)
 ;
 ; Formula: steps = (angle_tenths * numerator) / denominator
-; Uses hardware multiply and binary long division (24 iterations max)
+; Uses hardware multiply and simple repeated subtraction division
+; At 64 MHz, even 1000 iterations is fast (~0.1ms)
 ; ==============================================================================
 Convert_Angle_To_Steps:
     ; Multiply angle_tenths (16-bit) by numerator (8-bit)
@@ -920,85 +921,46 @@ Convert_Angle_To_Steps:
     movf    PRODH, W, A
     addwfc  0x39, F, A
     
-    ; Now divide 24-bit product by 8-bit denominator using binary long division
-    ; This runs in exactly 24 iterations (one per bit)
+    ; Now divide 24-bit product by 8-bit denominator
+    ; Simple repeated subtraction: subtract divisor, increment quotient
     ; Dividend: 0x39:0x3A:0x3B (24-bit)
     ; Divisor: MATH_TEMP_3 (8-bit)
     ; Quotient: STEPS_RESULT_L:STEPS_RESULT_H (16-bit)
-    ; Remainder: 0x3C (8-bit is enough for 8-bit divisor)
     
     clrf    STEPS_RESULT_L, A
     clrf    STEPS_RESULT_H, A
-    clrf    0x3C, A                 ; Remainder
     
-    ; Check if denominator is 0 (shouldn't happen)
+    ; Check if denominator is 0 (avoid infinite loop)
     movf    MATH_TEMP_3, W, A
     bz      Convert_Done
     
-    ; We only need 16 bits of quotient, so we can skip the top 8 bits
-    ; and just process the lower 16 bits of the dividend for the quotient
-    ; But the top 8 bits still contribute to the remainder
+Divide_Loop:
+    ; Check if dividend >= divisor (24-bit compare with 8-bit)
+    ; If high or mid bytes are non-zero, definitely >= divisor
+    movf    0x39, W, A
+    bnz     Divide_Subtract
+    movf    0x3A, W, A
+    bnz     Divide_Subtract
     
-    ; Process top 8 bits (0x39) into remainder only (no quotient bits)
-    movlw   8
-    movwf   0x3D, A                 ; Bit counter for top byte
+    ; Only low byte has value - compare directly
+    movf    MATH_TEMP_3, W, A       ; W = divisor
+    subwf   0x3B, W, A              ; W = dividend_low - divisor (don't store)
+    btfss   STATUS, 0, A            ; C=0 means dividend < divisor (borrow)
+    bra     Convert_Done            ; Done - remainder < divisor
     
-Div_Top_Loop:
-    ; Shift dividend left, MSB into remainder
-    bcf     STATUS, 0, A
-    rlcf    0x3B, F, A
-    rlcf    0x3A, F, A
-    rlcf    0x39, F, A
-    rlcf    0x3C, F, A              ; Carry into remainder
-    
-    ; Try to subtract divisor from remainder
+Divide_Subtract:
+    ; Subtract divisor from 24-bit dividend
     movf    MATH_TEMP_3, W, A
-    subwf   0x3C, W, A              ; remainder - divisor (don't store yet)
-    btfss   STATUS, 0, A            ; C=1 if remainder >= divisor
-    bra     Div_Top_Skip
+    subwf   0x3B, F, A              ; Subtract from low byte
+    movlw   0
+    subwfb  0x3A, F, A              ; Propagate borrow to mid
+    subwfb  0x39, F, A              ; Propagate borrow to high
     
-    ; Remainder >= divisor, do the subtraction
-    movf    MATH_TEMP_3, W, A
-    subwf   0x3C, F, A
-    ; (No quotient bit for top 8 iterations)
+    ; Increment 16-bit quotient
+    infsnz  STEPS_RESULT_L, F, A    ; Increment low, skip if no overflow
+    incf    STEPS_RESULT_H, F, A    ; Increment high if low overflowed
     
-Div_Top_Skip:
-    decfsz  0x3D, F, A
-    bra     Div_Top_Loop
-    
-    ; Process next 16 bits for quotient
-    movlw   16
-    movwf   0x3D, A                 ; Bit counter
-    
-Div_Main_Loop:
-    ; Shift quotient left (make room for new bit)
-    bcf     STATUS, 0, A
-    rlcf    STEPS_RESULT_L, F, A
-    rlcf    STEPS_RESULT_H, F, A
-    
-    ; Shift dividend left, MSB into remainder
-    ; After top loop, remaining bits are in 0x39:0x3A (0x3B is zeros)
-    ; Must shift all three to properly chain the carry
-    bcf     STATUS, 0, A
-    rlcf    0x3B, F, A
-    rlcf    0x3A, F, A
-    rlcf    0x39, F, A              ; <-- THIS WAS MISSING! Critical bug fix
-    rlcf    0x3C, F, A              ; Carry into remainder
-    
-    ; Try to subtract divisor from remainder
-    movf    MATH_TEMP_3, W, A
-    subwf   0x3C, W, A              ; remainder - divisor (don't store yet)
-    btfss   STATUS, 0, A            ; C=1 if remainder >= divisor
-    bra     Div_Main_Skip
-    
-    ; Remainder >= divisor, do the subtraction and set quotient bit
-    movf    MATH_TEMP_3, W, A
-    subwf   0x3C, F, A
-    bsf     STEPS_RESULT_L, 0, A    ; Set LSB of quotient
-    
-Div_Main_Skip:
-    decfsz  0x3D, F, A
-    bra     Div_Main_Loop
+    bra     Divide_Loop
     
 Convert_Done:
     return
