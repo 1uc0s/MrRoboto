@@ -106,20 +106,19 @@ CMD_CLAW        EQU     0x09            ; CLAW command (signed 8-bit steps)
 ; Conversion: steps = angle_tenths * RATIO_NUM / RATIO_DEN
 ;
 ; Measured calibration data:
-;   Shoulder/Elbow: 96 steps = 18.5 degrees = 185 tenths
-;                   ratio = 96/185 steps per tenth
-;   Base/Wrist:     48 steps per revolution = 48/3600 steps per tenth = 1/75
+;   96 steps = 18.5 degrees = 185 tenths
+;   ratio = 96/185 steps per tenth
 ;
 ; For integer math: steps = angle_tenths * numerator / denominator
 ; ==============================================================================
-RATIO_BASE_NUM      EQU     1           ; Base: 1/75 steps per tenth
-RATIO_BASE_DEN      EQU     75
+RATIO_BASE_NUM      EQU     96          ; Base: 96/185 steps per tenth
+RATIO_BASE_DEN      EQU     185
 RATIO_SHOULDER_NUM  EQU     96          ; Shoulder: 96/185 steps per tenth
 RATIO_SHOULDER_DEN  EQU     185
 RATIO_ELBOW_NUM     EQU     96          ; Elbow: 96/185 steps per tenth
 RATIO_ELBOW_DEN     EQU     185
-RATIO_WRIST_NUM     EQU     1           ; Wrist: 1/75 steps per tenth
-RATIO_WRIST_DEN     EQU     75
+RATIO_WRIST_NUM     EQU     96          ; Wrist: 96/185 steps per tenth
+RATIO_WRIST_DEN     EQU     185
 
 ; Coupling ratios (for future IK - currently unused)
 ; COUPLING_SE_RATIO: Shoulder-Elbow = -1 (opposite directions)
@@ -695,12 +694,12 @@ Execute_Status:
 ; Each angle is converted to steps using the gear ratios
 Execute_Angle:
     ; --- Base Motor (PARAM1) ---
-    ; steps = angle_tenths * 1 / 75
+    ; steps = angle_tenths * 96 / 185
     movff   PARAM1_L, MATH_TEMP_0
     movff   PARAM1_H, MATH_TEMP_1
-    movlw   RATIO_BASE_NUM          ; Numerator = 1
+    movlw   RATIO_BASE_NUM          ; Numerator = 96
     movwf   MATH_TEMP_2, A
-    movlw   RATIO_BASE_DEN          ; Denominator = 75
+    movlw   RATIO_BASE_DEN          ; Denominator = 185
     movwf   MATH_TEMP_3, A
     call    Convert_Angle_To_Steps
     ; Result in STEPS_RESULT_L (only need low byte for reasonable angles)
@@ -738,7 +737,7 @@ Angle_Elbow:
     
 Angle_Wrist:
     ; --- Wrist Motor (PARAM4) ---
-    ; steps = angle_tenths * 1 / 75
+    ; steps = angle_tenths * 96 / 185
     movff   PARAM4_L, MATH_TEMP_0
     movff   PARAM4_H, MATH_TEMP_1
     movlw   RATIO_WRIST_NUM
